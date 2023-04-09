@@ -1,0 +1,203 @@
+// Project:	Tomasulo's Algorithm
+// Entity	Floating-point Operand Register
+// File		fp_reg.hase
+// Date:	19 June 2001
+
+// A separate Operand Register entity is used for each floating-point register
+// in (in order that they can be separately coloured during animation).
+// Each contains a register which is loaded by the Common Data Bus.
+// The input packet contains a register number field and an operand field.
+
+// Floating-point Registers receive direct inputs from the CDB via the
+// input port and indirect inputs from the Decoder Unit.
+
+// The register content is sent to the output port on receipt of a 
+// command from the Decoder.
+
+// Commands from the Decoder just contain an integer (in the range 4 - 13)
+// to indicate the RS register to which the operand register content
+// should be sent.
+
+// Packets from the CDB contain a register number and an operand. The
+// operand is copied into the operand register.
+
+$class_decls
+
+//entity references
+  sim_entity_id bus;
+  sim_entity_id decoder;
+  
+//structures and variables
+  int RS_no;
+  int output_snk;
+  int output_src;
+  int Operand;
+  t_operand_reg Output, Snk_Output, Src_Output;
+  t_operand_req Snk_Request, Src_Request;
+
+  void Output_snk(t_operand_req Snk_Request);  
+  void Output_src(t_operand_req Src_Request);  
+
+$class_defs
+
+  void fp_reg::Output_snk(t_operand_req Snk_Request)
+{
+  // Invoked by the Decoder: copy parameter (= RS register
+  // number) into reg_no field and copy register operand field
+  // into output register operand field and set output_snk
+
+  Snk_Output.tag_no = Snk_Request.tag_no;
+  Snk_Output.reg_no = Snk_Request.reg_no;
+  output_snk = 1;
+}
+  void fp_reg::Output_src(t_operand_req Src_Request)
+{
+  // Invoked by the Decoder: copy parameter (= RS register number) into
+  // reg_no field and set output_src. Register operand field is copied
+  // into output register operand field in ClockPhase 1
+
+  Src_Output.tag_no = Src_Request.tag_no;
+  Src_Output.reg_no = Src_Request.reg_no;
+  output_src = 1;
+}
+
+$pre
+
+  output_snk = 0;
+  output_src = 0;
+  Register = 0;
+  dump_state();
+
+$phase0
+
+// predicates
+  sim_from_port receive(input);
+
+
+     sim_hold(5);	// give CDB chance to send new value in CP0
+     if (sim_waiting(ev, receive) > 0)
+		// If there is a receive event from the CDB, 
+		// copy operand data field into register data field. 
+      {
+	SIM_CAST(int, Operand, ev);
+	Register = Operand;
+	dump_state();
+      }
+
+$phase1
+
+     if (output_snk == 1)
+	// If output_snk is set and tag = 0, copy Register value to 
+	// Snk_Operand and send content of Snk_Operand register to output,
+	// else send tag with operand = 0
+      {
+       Snk_Output.operand = 0;
+       if (Snk_Output.tag_no == 0)
+	{
+	 Snk_Output.operand = Register;
+	 send_OPERAND(output, Snk_Output);
+	 }
+        else
+	 {
+	  switch (Snk_Output.tag_no)
+	   {
+		case 1:
+		send_FPR1(output, Snk_Output);
+		break;
+		case 2:
+		send_FPR2(output, Snk_Output);
+		break;
+		case 3:
+		send_FPR3(output, Snk_Output);
+		break;
+		case 4:
+		send_FPR4(output, Snk_Output);
+		break;
+		case 5:
+		send_FPR5(output, Snk_Output);
+		break;
+		case 6:
+		send_FPR6(output, Snk_Output);
+		break;
+		case 7:
+		send_FPR7(output, Snk_Output);
+		break;
+		case 8:
+		send_FPR8(output, Snk_Output);
+		break;
+		case 9:
+		send_FPR9(output, Snk_Output);
+		break;
+		case 10:
+		send_FPR10(output, Snk_Output);
+		break;
+		case 11:
+		send_FPR11(output, Snk_Output);
+		break;
+	    }
+	}
+       output_snk = 0;
+      }			// end of output snk
+
+     if (output_src == 1)
+	// If output_src is set and tag = 0, copy Register value to 
+	// Src_Operand and send content of Src_Operand register to output,
+	// else send tag with operand = 0
+      {
+       Src_Output.operand = 0;
+       if (Src_Output.tag_no == 0)
+	{
+	 Src_Output.operand = Register;
+	 send_OPERAND(output, Src_Output);
+	 }
+        else
+	 {
+	  switch (Src_Output.tag_no)
+	   {
+		case 1:
+		send_FPR1(output, Src_Output);
+		break;
+		case 2:
+		send_FPR2(output, Src_Output);
+		break;
+		case 3:
+		send_FPR3(output, Src_Output);
+		break;
+		case 4:
+		send_FPR4(output, Src_Output);
+		break;
+		case 5:
+		send_FPR5(output, Src_Output);
+		break;
+		case 6:
+		send_FPR6(output, Src_Output);
+		break;
+		case 7:
+		send_FPR7(output, Src_Output);
+		break;
+		case 8:
+		send_FPR8(output, Src_Output);
+		break;
+		case 9:
+		send_FPR9(output, Src_Output);
+		break;
+		case 10:
+		send_FPR10(output, Src_Output);
+		break;
+		case 11:
+		send_FPR11(output, Src_Output);
+		break;
+	    }
+	}
+	output_src = 0;
+       }			// end of output src
+
+
+
+
+
+
+
+
+
+

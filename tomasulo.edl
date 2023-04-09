@@ -1,0 +1,661 @@
+PROJECT ( PREAMBLE (
+	NAME "Tomasulo"
+	AUTHOR "Roland Ibbett"
+	VERSION 1.8
+	DESCRIPTION "Tomasulo's Algorithm V1.8"
+)
+
+
+PARAMLIB (
+-- Tag register states
+	ENUM (tag_state, [TAG_0:tag_0,
+			  TAG_1:tag_1,		-- Floating Point Buffer 1
+			  TAG_2:tag_2,		-- Floating Point Buffer 2
+			  TAG_3:tag_3,		-- Floating Point Buffer 3
+			  TAG_4:tag_4,		-- Floating Point Buffer 4
+			  TAG_5:tag_5,		-- Floating Point Buffer 5
+			  TAG_6:tag_6,		-- Floating Point Buffer 6
+			  TAG_7:tag_7,		-- Add Reservation Station 1
+			  TAG_8:tag_8,		-- Add Reservation Station 2
+			  TAG_9:tag_9,		-- Add Reservation Station 3
+			  TAG_10:tag_10,	-- Mul Reservation Station 1
+			  TAG_11:tag_11]);	-- Mul Reservation Station 2
+		
+-- definition of error and parameter description word array
+	ARRAY (string_array, String);
+
+-- definition of instruction structures
+	STRUCT (t_reg_reg, [RSTRING (snk_reg, "-"),
+			      RSTRING (src_reg, "-")]);
+	STRUCT (t_reg_store, [RSTRING (snk_reg, "-"),
+			      RINT (mem_addr, 0)]);
+	STRUCT (t_load, [RSTRING (snk_reg, "-"),
+			    RINT (mem_addr, 0)]);
+	STRUCT (t_store, [RSTRING (src_reg, "-"),
+			    RINT (mem_addr, 0)]);
+
+-- definition of instruction set
+	INSTR (t_cdb_instrn_set, [(VOID),
+				  (ALURR(ADDRR,SUBRR,MULRR,DIVRR,ADD,SUB,
+					 MUL,DIV,LD,ST), 
+				   RSTRUCT (t_reg_reg, rr_field)),
+				  (ALURS(ADDRS,SUBRS,MULRS,DIVRS), 
+				   RSTRUCT (t_reg_store, rs_field)),
+				  (LOAD,  RSTRUCT (t_load, ld_field)),
+				  (STORE, RSTRUCT (t_store, st_field)),
+				  (STOP)
+				 ], function);
+
+-- definition of Operand Register and packet
+	STRUCT (t_operand_reg, [RINT(operand, 0),
+				RINT(reg_no, 0),
+				RINT(tag_no, 0)]);
+
+-- definition of Operand Register request packet
+	STRUCT (t_operand_req, [RINT(reg_no, 0),
+				RINT(tag_no, 0)]);
+
+-- definition of Reservation Station control word
+
+	STRUCT (t_rs_control, [RINSTR(t_cdb_instrn_set, instrn),
+				RINT(tag_no, 0)]);
+				
+
+-- definition of arithmetic unit output packet
+	STRUCT (t_au_output, [RINT(tag_no, 0),
+			      RINT(operand, 0)]);
+
+-- definition of instruction memory array
+	ARRAY (instrn_mem_array, t_cdb_instrn_set);
+
+-- definition of data memory word
+	STRUCT (data_mem_word, [RINT(data, 0)]);
+
+-- definition of data memory array
+	ARRAY (data_mem_array, data_mem_word);
+
+-- definition of decoder to CDB packet
+
+	STRUCT (t_decoder_pkt, [RINT(snk_tag, 0),
+				RINT(src_tag, 0),
+				RINT(snk_dest, 0),
+				RINT(src_dest, 0),
+				RINT(status, 0),
+				RINSTR(t_cdb_instrn_set, instrn)]);
+
+-- definition of arithmetic unit pipeline packets
+
+	STRUCT (t_au_struct, [RINT(status, 0),
+				   RINSTR(t_cdb_instrn_set, instrn),
+				   RINT(data1, 0),
+				   RINT(data2, 0)]);
+
+-- definition of arithmetic unit result packets
+
+	STRUCT (t_au_result,    [RINT(status, 0),
+				 RINT(data, 0)]);
+
+-- for ALU instructions data1 contains sink register operand value
+--                      data2 contains source register operand value
+
+-- definition of links 
+
+	LINK(l_dec,[	(DECODER_PKT,RSTRUCT(t_decoder_pkt,DP))]);
+	LINK(l_tag,[    (TAG1,RINT(tag_no,DP) : tag_1),
+			(TAG2,RINT(tag_no,DP) : tag_2),
+			(TAG3,RINT(tag_no,DP) : tag_3),
+			(TAG4,RINT(tag_no,DP) : tag_4),
+			(TAG5,RINT(tag_no,DP) : tag_5),
+			(TAG6,RINT(tag_no,DP) : tag_6),
+			(TAG7,RINT(tag_no,DP) : tag_7),
+			(TAG8,RINT(tag_no,DP) : tag_8),
+			(TAG9,RINT(tag_no,DP) : tag_9),
+			(TAG10,RINT(tag_no,DP) : tag_10),
+			(TAG11,RINT(tag_no,DP) : tag_11)]);
+	LINK(l_opr,[ (OPERAND,RSTRUCT(t_operand_reg,DP)),
+			(FLB1,RSTRUCT(t_operand_reg,DP) : tag_1),
+			(FLB2,RSTRUCT(t_operand_reg,DP) : tag_2),
+			(FLB3,RSTRUCT(t_operand_reg,DP) : tag_3),
+			(FLB4,RSTRUCT(t_operand_reg,DP) : tag_4),
+			(FLB5,RSTRUCT(t_operand_reg,DP) : tag_5),
+			(FLB6,RSTRUCT(t_operand_reg,DP) : tag_6),
+			(FPR1,RSTRUCT(t_operand_reg,DP) : tag_1),
+			(FPR2,RSTRUCT(t_operand_reg,DP) : tag_2),
+			(FPR3,RSTRUCT(t_operand_reg,DP) : tag_3),
+			(FPR4,RSTRUCT(t_operand_reg,DP) : tag_4),
+			(FPR5,RSTRUCT(t_operand_reg,DP) : tag_5),
+			(FPR6,RSTRUCT(t_operand_reg,DP) : tag_6),
+			(FPR7,RSTRUCT(t_operand_reg,DP) : tag_7),
+			(FPR8,RSTRUCT(t_operand_reg,DP) : tag_8),
+			(FPR9,RSTRUCT(t_operand_reg,DP) : tag_9),
+			(FPR10,RSTRUCT(t_operand_reg,DP) : tag_10),
+			(FPR11,RSTRUCT(t_operand_reg,DP) : tag_11),
+			(AU_OUTPUT,RSTRUCT(t_au_output,DP)),
+			(AU1_OUTPUT,RSTRUCT(t_au_output,DP) : tag_7),
+			(AU2_OUTPUT,RSTRUCT(t_au_output,DP) : tag_8),
+			(AU3_OUTPUT,RSTRUCT(t_au_output,DP) : tag_9),
+			(AU4_OUTPUT,RSTRUCT(t_au_output,DP) : tag_10),
+			(AU5_OUTPUT,RSTRUCT(t_au_output,DP) : tag_11),
+			(VALUE,RINT(value,DP))]);
+	LINK(l_ins,[ (INSTRUCTION, RINSTR(t_cdb_instrn_set,DP))]);
+	LINK(l_con,[	(CONTROL, RSTRUCT(t_rs_control,DP)),
+			(COMMAND, RINT(control,DP))]);
+	)
+	GLOBALS(
+	)
+	ENTITYLIB (
+	
+	ABSTRACT Biclocked sync ( )
+	ENTITY Clock sync ( )
+	ENTITY Clockphase sync ( )
+
+	ENTITY flb_text (
+		DESCRIPTION ("FLB Text")
+		PARAMS ( )
+		PORTS (
+			PORT (from_source,l_opr,DESTINATION);
+		)
+	)
+
+	ENTITY source (
+		EXTENDS (Biclocked)
+		DESCRIPTION ("Instruction/Data Source")
+		PARAMS (
+			RINT (Max_Time_Left, 2000)
+			RRANGE (d_accesstime, 1, 16, 4)
+			RINT (I_Mem_Size, 256)
+			RINT (D_Mem_Size, 256)
+			RARRAY ( instrn_mem_array, instr_mem, I_Mem_Size)
+			RARRAY ( data_mem_array, data_mem, D_Mem_Size)
+		)
+		PORTS (
+			PORT (to_flos,l_ins,SOURCE);
+			PORT (to_flb_text,l_opr,SOURCE);
+			PORT (from_sdb1,l_opr,DESTINATION);
+			PORT (from_sdb2,l_opr,DESTINATION);
+			PORT (from_sdb3,l_opr,DESTINATION);
+		)
+	)
+	ENTITY flb_reg (
+		EXTENDS (Biclocked)
+		DESCRIPTION ("Operand Register with output port")
+		STATES (FLB_REG, FLB_REG_BUSY)
+		PARAMS (
+			RINT (FLB_Register, 0);
+		)
+		PORTS (
+			PORT (output,l_opr,SOURCE);
+		)
+	)
+	ENTITY  flos (
+		EXTENDS (Biclocked)
+		DESCRIPTION ("Floating Point Operand Stack")
+		STATES (FLOS_IDLE, FLOS_BUSY)
+		PARAMS (
+			RINSTR (t_cdb_instrn_set, FLOS8);
+			RINSTR (t_cdb_instrn_set, FLOS7);
+			RINSTR (t_cdb_instrn_set, FLOS6);
+			RINSTR (t_cdb_instrn_set, FLOS5);
+			RINSTR (t_cdb_instrn_set, FLOS4);
+			RINSTR (t_cdb_instrn_set, FLOS3);
+			RINSTR (t_cdb_instrn_set, FLOS2);
+			RINSTR (t_cdb_instrn_set, FLOS1);
+		)
+		PORTS (
+			PORT (from_source,l_ins,DESTINATION);
+			PORT (to_decoder,l_ins,SOURCE);
+		)
+	)
+
+	ENTITY  decoder (
+		EXTENDS (Biclocked)
+		DESCRIPTION ("Decoder")
+		STATES (DECODER_IDLE, DECODER_BUSY, DECODER_HELD)
+		PARAMS (
+			RINSTR (t_cdb_instrn_set, FUNC);
+		)
+		PORTS (
+			PORT (from_flos,l_ins,DESTINATION);
+			PORT (to_cdb,l_dec,SOURCE);
+		)
+	)
+	ENTITY cdb (
+		EXTENDS (Biclocked)
+		DESCRIPTION ("Common Data Bus")
+		PARAMS ( )
+		PORTS (
+		       PORT (from_decoder,l_dec,DESTINATION);
+		       PORT (from_flb1,l_opr,DESTINATION);
+		       PORT (from_flb2,l_opr,DESTINATION);
+		       PORT (from_flb3,l_opr,DESTINATION);
+		       PORT (from_flb4,l_opr,DESTINATION);
+		       PORT (from_flb5,l_opr,DESTINATION);
+		       PORT (from_flb6,l_opr,DESTINATION);
+
+		       PORT (to_fp_r0_tag,l_tag,SOURCE);
+		       PORT (to_fp_r1_tag,l_tag,SOURCE);
+		       PORT (to_fp_r2_tag,l_tag,SOURCE);
+		       PORT (to_fp_r3_tag,l_tag,SOURCE);
+		       PORT (to_fp_r0_opr,l_opr,SOURCE);
+		       PORT (to_fp_r1_opr,l_opr,SOURCE);
+		       PORT (to_fp_r2_opr,l_opr,SOURCE);
+		       PORT (to_fp_r3_opr,l_opr,SOURCE);
+		       PORT (from_fpr0_opr,l_opr,DESTINATION);
+		       PORT (from_fpr1_opr,l_opr,DESTINATION);
+		       PORT (from_fpr2_opr,l_opr,DESTINATION);
+		       PORT (from_fpr3_opr,l_opr,DESTINATION);
+
+		       PORT (to_sdb1_tag,l_tag,SOURCE);
+		       PORT (to_sdb2_tag,l_tag,SOURCE);
+		       PORT (to_sdb3_tag,l_tag,SOURCE);
+		       PORT (to_sdb1_opr,l_opr,SOURCE);
+		       PORT (to_sdb2_opr,l_opr,SOURCE);
+		       PORT (to_sdb3_opr,l_opr,SOURCE);
+
+		       PORT (to_add_res1_snk_tag,l_tag,SOURCE);
+		       PORT (to_add_res1_snk_opr,l_opr,SOURCE);
+		       PORT (to_add_res1_src_tag,l_tag,SOURCE);
+		       PORT (to_add_res1_src_opr,l_opr,SOURCE);
+		       PORT (to_add_res1_control,l_con,SOURCE);
+
+		       PORT (to_add_res2_snk_tag,l_tag,SOURCE);
+		       PORT (to_add_res2_snk_opr,l_opr,SOURCE);
+		       PORT (to_add_res2_src_tag,l_tag,SOURCE);
+		       PORT (to_add_res2_src_opr,l_opr,SOURCE);
+		       PORT (to_add_res2_control,l_con,SOURCE);
+
+		       PORT (to_add_res3_snk_tag,l_tag,SOURCE);
+		       PORT (to_add_res3_snk_opr,l_opr,SOURCE);
+		       PORT (to_add_res3_src_tag,l_tag,SOURCE);
+		       PORT (to_add_res3_src_opr,l_opr,SOURCE);
+		       PORT (to_add_res3_control,l_con,SOURCE);
+
+		       PORT (to_mul_res1_snk_tag,l_tag,SOURCE);
+		       PORT (to_mul_res1_snk_opr,l_opr,SOURCE);
+		       PORT (to_mul_res1_src_tag,l_tag,SOURCE);
+		       PORT (to_mul_res1_src_opr,l_opr,SOURCE);
+		       PORT (to_mul_res1_control,l_con,SOURCE);
+
+		       PORT (to_mul_res2_snk_tag,l_tag,SOURCE);
+		       PORT (to_mul_res2_snk_opr,l_opr,SOURCE);
+		       PORT (to_mul_res2_src_tag,l_tag,SOURCE);
+		       PORT (to_mul_res2_src_opr,l_opr,SOURCE);
+		       PORT (to_mul_res2_control,l_con,SOURCE);
+
+		       PORT (from_add,l_opr,DESTINATION);
+		       PORT (from_mul,l_opr,DESTINATION);
+		)
+	)
+	ENTITY  tag (
+		DESCRIPTION ("Reservation Station Tag Register")
+		PARAMS (
+			RENUM(tag_state, cur_state, 0 );
+		)
+		PORTS (
+			PORT (input,l_tag,DESTINATION);
+		 )
+	)
+	ENTITY sdb_reg (
+		EXTENDS(Biclocked)
+		DESCRIPTION ("Store Data Buffer")
+		STATES(SDB_REG, SDB_REG_BUSY)
+		PARAMS (
+			RINT (SDB_Register, 0);
+		)
+		PORTS (
+			PORT (input,l_opr,DESTINATION);
+			PORT (output,l_opr,SOURCE);
+		 )
+	)
+	ENTITY fp_reg (
+		EXTENDS(Biclocked)
+		DESCRIPTION ("Floating-point Operand Register")
+		PARAMS (
+			RINT (Register, 0);
+		)
+		PORTS (
+			PORT (input,l_opr,DESTINATION);
+			PORT (output,l_opr,SOURCE);
+		)
+	)
+	ENTITY rs_opr (
+		EXTENDS(Biclocked)
+		DESCRIPTION ("Reservation Station Operand Register")
+		STATES (RS_OPR, RS_OPR_BUSY)
+		PARAMS (
+			RINT (Register, 0);
+		)
+		PORTS (
+			PORT (input,l_opr,DESTINATION);
+			PORT (output,l_opr,SOURCE);
+		 )
+	)
+	ENTITY rsc (
+		EXTENDS (Biclocked)
+		DESCRIPTION ("Reservation Station Control Register")
+		PARAMS (
+			RSTRING (FUNC, "FREE");
+		)
+		PORTS (
+			PORT (input,l_con,DESTINATION);
+			PORT (output,l_con,SOURCE);
+		 )
+	)
+	ENTITY add_res (
+		EXTENDS (Biclocked)
+		DESCRIPTION ("Add Reservation Station")
+		PARAMS ()
+		PORTS ()
+	)
+	ENTITY mul_res (
+		EXTENDS (Biclocked)
+		DESCRIPTION ("Multiply Reservation Station")
+		PARAMS ()
+		PORTS ()
+	)
+
+	ENTITY add (
+		EXTENDS (Biclocked)
+		DESCRIPTION ("Addition FP Unit")
+		STATES (ADD_VOID, ADD_BUSY, ADD_HELD)
+		PARAMS (
+			 RRANGE (latency, 1, 8, 2)
+		)
+		PORTS(
+		      PORT (from_add_res1_snk,l_opr,DESTINATION);
+		      PORT (from_add_res2_snk,l_opr,DESTINATION);
+		      PORT (from_add_res3_snk,l_opr,DESTINATION);
+		      PORT (from_add_res1_src,l_opr,DESTINATION);
+		      PORT (from_add_res2_src,l_opr,DESTINATION);
+		      PORT (from_add_res3_src,l_opr,DESTINATION);
+		      PORT (from_add_res1_rsc,l_con,DESTINATION);
+		      PORT (from_add_res2_rsc,l_con,DESTINATION);
+		      PORT (from_add_res3_rsc,l_con,DESTINATION);
+		      PORT (to_cdb,l_opr,SOURCE);
+		)
+	)
+
+	ENTITY mul (
+		EXTENDS (Biclocked)
+		DESCRIPTION ("Addition FP Unit")
+		STATES (MUL_VOID, MUL_BUSY, MUL_HELD)
+		PARAMS (
+			RRANGE (mul_latency, 1, 8, 3)
+			RRANGE (div_latency, 1, 16, 12)
+		)
+		PORTS(
+		      PORT (from_mul_res1_snk,l_opr,DESTINATION);
+		      PORT (from_mul_res2_snk,l_opr,DESTINATION);
+		      PORT (from_mul_res1_src,l_opr,DESTINATION);
+		      PORT (from_mul_res2_src,l_opr,DESTINATION);
+		      PORT (from_mul_res1_rsc,l_con,DESTINATION);
+		      PORT (from_mul_res2_rsc,l_con,DESTINATION);
+		      PORT (to_cdb,l_opr,SOURCE);
+		)
+	)
+
+	)
+
+	STRUCTURE(
+-- List of entity instances in top-level model
+
+	AENTITY source SOURCE (
+		DESCRIPTION("Instruction/Data Source")
+	);
+	AENTITY flb_text FLB_TEXT (
+		DESCRIPTION("FLB text and numbering")
+	);
+	AENTITY cdb CDB (
+		DESCRIPTION("Common Data Bus")
+	);
+
+	AENTITY Clock CLOCK ( DESCRIPTION("clock") )
+	AENTITY Clockphase CPHASE ( DESCRIPTION("clock phase") )
+
+	AENTITY flb_reg FL_PT_BUF6 (
+		DESCRIPTION ("Floating Point Buffer")
+	);
+	AENTITY flb_reg FL_PT_BUF5 (
+		DESCRIPTION ("Floating Point Buffer")
+	);
+	AENTITY flb_reg FL_PT_BUF4 (
+		DESCRIPTION ("Floating Point Buffer")
+	);
+	AENTITY flb_reg FL_PT_BUF3 (
+		DESCRIPTION ("Floating Point Buffer")
+	);
+	AENTITY flb_reg FL_PT_BUF2 (
+		DESCRIPTION ("Floating Point Buffer")
+	);
+	AENTITY flb_reg FL_PT_BUF1 (
+		DESCRIPTION ("Floating Point Buffer")
+	);
+
+	AENTITY flos FLOS (
+		DESCRIPTION ("Floating Point Operand Stack")
+	);
+	AENTITY decoder DECODER (
+		DESCRIPTION ("Decoder")
+	);
+	AENTITY tag SDB_REG1_TAG (
+		DESCRIPTION ("Store Data Buffer Tag")
+	);
+	AENTITY sdb_reg SDB_REG1_OPR (
+		DESCRIPTION ("Store Data Buffer")
+	);
+	AENTITY tag SDB_REG2_TAG (
+		DESCRIPTION ("Store Data Buffer Tag")
+	);
+	AENTITY sdb_reg SDB_REG2_OPR (
+		DESCRIPTION ("Store Data Buffer")
+	);
+	AENTITY tag SDB_REG3_TAG (
+		DESCRIPTION ("Store Data Buffer Tag")
+	);
+	AENTITY sdb_reg SDB_REG3_OPR (
+		DESCRIPTION ("Store Data Buffer")
+	);
+	AENTITY tag FL_PT_REG0_TAG (
+		DESCRIPTION ("Floating Point Register Tag")
+	);
+	AENTITY fp_reg FL_PT_REG0_OPR (
+		DESCRIPTION ("Floating Point Register")
+	);
+	AENTITY tag FL_PT_REG1_TAG (
+		DESCRIPTION ("Floating Point Register Tag")
+	);
+	AENTITY fp_reg FL_PT_REG1_OPR (
+		DESCRIPTION ("Floating Point Register")
+	);
+	AENTITY tag FL_PT_REG2_TAG (
+		DESCRIPTION ("Floating Point Register Tag")
+	);
+	AENTITY fp_reg FL_PT_REG2_OPR (
+		DESCRIPTION ("Floating Point Register")
+	);
+	AENTITY tag FL_PT_REG3_TAG (
+		DESCRIPTION ("Floating Point Register Tag")
+	);
+	AENTITY fp_reg FL_PT_REG3_OPR (
+		DESCRIPTION ("Floating Point Register")
+	);
+	AENTITY tag ADD_RES1_SNK_TAG (
+		DESCRIPTION ("Add Reservation Station Sink Tag")
+	);
+	AENTITY rs_opr ADD_RES1_SNK_OPR (
+		DESCRIPTION ("Add Reservation Station Source Operand")
+	);
+	AENTITY tag ADD_RES1_SRC_TAG (
+		DESCRIPTION ("Add Reservation Station Source Tag")
+	);
+	AENTITY rs_opr ADD_RES1_SRC_OPR (
+		DESCRIPTION ("Add Reservation Station Source Operand")
+	);
+	AENTITY rsc ADD_RES1_CONTROL (
+		DESCRIPTION ("Addition Reservation Station Control")
+	);
+	AENTITY tag ADD_RES2_SNK_TAG (
+		DESCRIPTION ("Addition Reservation Station Sink Tag")
+	);
+	AENTITY rs_opr ADD_RES2_SNK_OPR (
+		DESCRIPTION ("Add Reservation Station Source Operand")
+	);
+	AENTITY tag ADD_RES2_SRC_TAG (
+		DESCRIPTION ("Add Reservation Station Source Tag")
+	);
+	AENTITY rs_opr ADD_RES2_SRC_OPR (
+		DESCRIPTION ("Add Reservation Station Source Operand")
+	);
+	AENTITY rsc ADD_RES2_CONTROL (
+		DESCRIPTION ("Addition Reservation Station Control")
+	);
+
+	AENTITY tag ADD_RES3_SNK_TAG (
+		DESCRIPTION ("Add Reservation Station Sink Tag")
+	);
+	AENTITY rs_opr ADD_RES3_SNK_OPR (
+		DESCRIPTION ("Add Reservation Station Source Operand")
+	);
+	AENTITY tag ADD_RES3_SRC_TAG (
+		DESCRIPTION ("Add Reservation Station Source Tag")
+	);
+	AENTITY rs_opr ADD_RES3_SRC_OPR (
+		DESCRIPTION ("Add Reservation Station Source Operand")
+	);
+	AENTITY rsc ADD_RES3_CONTROL (
+		DESCRIPTION ("Addition Reservation Station Control")
+	);
+
+	AENTITY tag MUL_RES1_SNK_TAG (
+		DESCRIPTION ("Add Reservation Station Source Tag")
+	);
+	AENTITY rs_opr MUL_RES1_SNK_OPR (
+		DESCRIPTION ("Add Reservation Station Source Operand")
+	);
+	AENTITY tag MUL_RES1_SRC_TAG (
+		DESCRIPTION ("Add Reservation Station Sink Tag")
+	);
+	AENTITY rs_opr MUL_RES1_SRC_OPR (
+		DESCRIPTION ("Add Reservation Station Source Operand")
+	);
+	AENTITY rsc MUL_RES1_CONTROL (
+		DESCRIPTION ("Multiply Reservation Station Control")
+	);
+	AENTITY tag MUL_RES2_SNK_TAG (
+		DESCRIPTION ("Multiply Reservation Station Source Tag")
+	);
+	AENTITY rs_opr MUL_RES2_SNK_OPR (
+		DESCRIPTION ("Multiply Reservation Station Source Operand")
+	);
+	AENTITY tag MUL_RES2_SRC_TAG (
+		DESCRIPTION ("Multiply Reservation Station Sink Tag")
+	);
+	AENTITY rs_opr MUL_RES2_SRC_OPR (
+		DESCRIPTION ("Multiply Reservation Station Source Operand")
+	);
+	AENTITY rsc MUL_RES2_CONTROL (
+		DESCRIPTION ("Multiply Reservation Station Control")
+	);
+	AENTITY add_res ADD_RES (
+		DESCRIPTION ("Add Reservation Station")
+	);
+	AENTITY mul_res MUL_RES (
+		DESCRIPTION ("Add Reservation Station")
+	);
+	AENTITY add ADD (
+		DESCRIPTION ("Adder")
+	);
+	AENTITY mul MUL (
+		DESCRIPTION ("Multiplier")
+	);
+
+	CLINK(source.SOURCE[to_flos]->flos.FLOS[from_source],1);
+	CLINK(source.SOURCE[to_flb_text]->flb_text.FLB_TEXT[from_source],1);
+	CLINK(sdb_reg.SDB_REG1_OPR[output]->source.SOURCE[from_sdb1],1);
+	CLINK(sdb_reg.SDB_REG2_OPR[output]->source.SOURCE[from_sdb2],1);
+	CLINK(sdb_reg.SDB_REG3_OPR[output]->source.SOURCE[from_sdb3],1);
+	CLINK(flos.FLOS[to_decoder]->decoder.DECODER[from_flos],1);
+	CLINK(decoder.DECODER[to_cdb]->cdb.CDB[from_decoder],1);
+	CLINK(flb_reg.FL_PT_BUF1[output]->cdb.CDB[from_flb1],1);
+	CLINK(flb_reg.FL_PT_BUF2[output]->cdb.CDB[from_flb2],1);
+	CLINK(flb_reg.FL_PT_BUF3[output]->cdb.CDB[from_flb3],1);
+	CLINK(flb_reg.FL_PT_BUF4[output]->cdb.CDB[from_flb4],1);
+	CLINK(flb_reg.FL_PT_BUF5[output]->cdb.CDB[from_flb5],1);
+	CLINK(flb_reg.FL_PT_BUF6[output]->cdb.CDB[from_flb6],1);
+
+
+	CLINK(cdb.CDB[to_fp_r0_tag]->tag.FL_PT_REG0_TAG[input],1);
+	CLINK(cdb.CDB[to_fp_r1_tag]->tag.FL_PT_REG1_TAG[input],1);
+	CLINK(cdb.CDB[to_fp_r2_tag]->tag.FL_PT_REG2_TAG[input],1);
+	CLINK(cdb.CDB[to_fp_r3_tag]->tag.FL_PT_REG3_TAG[input],1);
+
+	CLINK(cdb.CDB[to_fp_r0_opr]->fp_reg.FL_PT_REG0_OPR[input],1);
+	CLINK(cdb.CDB[to_fp_r1_opr]->fp_reg.FL_PT_REG1_OPR[input],1);
+	CLINK(cdb.CDB[to_fp_r2_opr]->fp_reg.FL_PT_REG2_OPR[input],1);
+	CLINK(cdb.CDB[to_fp_r3_opr]->fp_reg.FL_PT_REG3_OPR[input],1);
+
+
+	CLINK(fp_reg.FL_PT_REG0_OPR[output]->cdb.CDB[from_fpr0_opr],1);
+	CLINK(fp_reg.FL_PT_REG1_OPR[output]->cdb.CDB[from_fpr1_opr],1);
+	CLINK(fp_reg.FL_PT_REG2_OPR[output]->cdb.CDB[from_fpr2_opr],1);
+	CLINK(fp_reg.FL_PT_REG3_OPR[output]->cdb.CDB[from_fpr3_opr],1);
+
+	CLINK(cdb.CDB[to_sdb1_tag]->tag.SDB_REG1_TAG[input],1);
+	CLINK(cdb.CDB[to_sdb2_tag]->tag.SDB_REG2_TAG[input],1);
+	CLINK(cdb.CDB[to_sdb3_tag]->tag.SDB_REG3_TAG[input],1);
+	CLINK(cdb.CDB[to_sdb1_opr]->sdb_reg.SDB_REG1_OPR[input],1);
+	CLINK(cdb.CDB[to_sdb2_opr]->sdb_reg.SDB_REG2_OPR[input],1);
+	CLINK(cdb.CDB[to_sdb3_opr]->sdb_reg.SDB_REG3_OPR[input],1);
+
+
+	CLINK(cdb.CDB[to_add_res1_snk_tag]->tag.ADD_RES1_SNK_TAG[input],1);
+	CLINK(cdb.CDB[to_add_res1_snk_opr]->rs_opr.ADD_RES1_SNK_OPR[input],1);
+	CLINK(cdb.CDB[to_add_res1_src_tag]->tag.ADD_RES1_SRC_TAG[input],1);
+	CLINK(cdb.CDB[to_add_res1_src_opr]->rs_opr.ADD_RES1_SRC_OPR[input],1);
+	CLINK(cdb.CDB[to_add_res1_control]->rsc.ADD_RES1_CONTROL[input],1);
+	CLINK(cdb.CDB[to_add_res2_snk_tag]->tag.ADD_RES2_SNK_TAG[input],1);
+	CLINK(cdb.CDB[to_add_res2_snk_opr]->rs_opr.ADD_RES2_SNK_OPR[input],1);
+	CLINK(cdb.CDB[to_add_res2_src_tag]->tag.ADD_RES2_SRC_TAG[input],1);
+	CLINK(cdb.CDB[to_add_res2_src_opr]->rs_opr.ADD_RES2_SRC_OPR[input],1);
+	CLINK(cdb.CDB[to_add_res2_control]->rsc.ADD_RES2_CONTROL[input],1);
+	CLINK(cdb.CDB[to_add_res3_snk_tag]->tag.ADD_RES3_SNK_TAG[input],1);
+	CLINK(cdb.CDB[to_add_res3_snk_opr]->rs_opr.ADD_RES3_SNK_OPR[input],1);
+	CLINK(cdb.CDB[to_add_res3_src_tag]->tag.ADD_RES3_SRC_TAG[input],1);
+	CLINK(cdb.CDB[to_add_res3_src_opr]->rs_opr.ADD_RES3_SRC_OPR[input],1);
+	CLINK(cdb.CDB[to_add_res3_control]->rsc.ADD_RES3_CONTROL[input],1);
+	CLINK(cdb.CDB[to_mul_res1_snk_tag]->tag.MUL_RES1_SNK_TAG[input],1);
+	CLINK(cdb.CDB[to_mul_res1_snk_opr]->rs_opr.MUL_RES1_SNK_OPR[input],1);
+	CLINK(cdb.CDB[to_mul_res1_src_tag]->tag.MUL_RES1_SRC_TAG[input],1);
+	CLINK(cdb.CDB[to_mul_res1_src_opr]->rs_opr.MUL_RES1_SRC_OPR[input],1);
+	CLINK(cdb.CDB[to_mul_res1_control]->rsc.MUL_RES1_CONTROL[input],1);
+	CLINK(cdb.CDB[to_mul_res2_snk_tag]->tag.MUL_RES2_SNK_TAG[input],1);
+	CLINK(cdb.CDB[to_mul_res2_snk_opr]->rs_opr.MUL_RES2_SNK_OPR[input],1);
+	CLINK(cdb.CDB[to_mul_res2_src_tag]->tag.MUL_RES2_SRC_TAG[input],1);
+	CLINK(cdb.CDB[to_mul_res2_src_opr]->rs_opr.MUL_RES2_SRC_OPR[input],1);
+	CLINK(cdb.CDB[to_mul_res2_control]->rsc.MUL_RES2_CONTROL[input],1);
+
+	CLINK(rs_opr.ADD_RES1_SNK_OPR[output]->add.ADD[from_add_res1_snk],1);
+	CLINK(rs_opr.ADD_RES2_SNK_OPR[output]->add.ADD[from_add_res2_snk],1);
+	CLINK(rs_opr.ADD_RES3_SNK_OPR[output]->add.ADD[from_add_res3_snk],1);
+	CLINK(rs_opr.ADD_RES1_SRC_OPR[output]->add.ADD[from_add_res1_src],1);
+	CLINK(rs_opr.ADD_RES2_SRC_OPR[output]->add.ADD[from_add_res2_src],1);
+	CLINK(rs_opr.ADD_RES3_SRC_OPR[output]->add.ADD[from_add_res3_src],1);
+	CLINK(rsc.ADD_RES1_CONTROL[output]->add.ADD[from_add_res1_rsc],1);
+	CLINK(rsc.ADD_RES2_CONTROL[output]->add.ADD[from_add_res2_rsc],1);
+	CLINK(rsc.ADD_RES3_CONTROL[output]->add.ADD[from_add_res3_rsc],1);
+	CLINK(rs_opr.MUL_RES1_SNK_OPR[output]->mul.MUL[from_mul_res1_snk],1);
+	CLINK(rs_opr.MUL_RES2_SNK_OPR[output]->mul.MUL[from_mul_res2_snk],1);
+	CLINK(rs_opr.MUL_RES1_SRC_OPR[output]->mul.MUL[from_mul_res1_src],1);
+	CLINK(rs_opr.MUL_RES2_SRC_OPR[output]->mul.MUL[from_mul_res2_src],1);
+	CLINK(rsc.MUL_RES1_CONTROL[output]->mul.MUL[from_mul_res1_rsc],1);
+	CLINK(rsc.MUL_RES2_CONTROL[output]->mul.MUL[from_mul_res2_rsc],1);
+	CLINK(add.ADD[to_cdb]->cdb.CDB[from_add],1);
+	CLINK(mul.MUL[to_cdb]->cdb.CDB[from_mul],1);
+
+	)
+)
+
+
+
+
+

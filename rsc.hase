@@ -1,0 +1,88 @@
+// Project:	Tomasulo's Algorithm
+// Entity	Reservation Station Control Register
+// File		oprb.hase
+// Date:	10 July 2001
+
+// The Reservation Station Control Registers receive packets from the CDB
+// containing an instruction and a tag number. The tag number is the 
+// number of the Reservation Station. The Control Register displays
+// the function field of the instrucion.
+// When the appropriate reservations station entity (add_res or mul_res)
+// invokes the Output_to_au method, the instruction and tag number are
+// sent to the arithemtic unit. The tag is copied through to the output of
+// the arithmetic unit to generate the result tag
+
+
+$class_decls
+
+//entity references
+  sim_entity_id add_res;
+  sim_entity_id mul_res;
+  
+//structures and variables
+
+  t_rs_control Instruction, Register;
+  int RS_no;
+  int output_to_au;
+
+//classes
+
+  void Output_to_au();  
+  
+$class_defs
+
+  void rsc::Output_to_au()
+{
+  // Invoked by a Reservation Station: set output_to_au = 1
+  output_to_au = 1;
+
+}
+
+$pre
+
+  add_res = sim.get_entity_id("ADD_RES");
+  output_to_au = 0;
+
+  strcpy(FUNC, "FREE");
+  dump_state();
+
+$phase0
+// predicates
+  sim_from_port receive(input);
+
+	sim_hold(5);
+	// If there is an event from the CDB, copy function and tag number
+	// into Register.
+
+	if (sim_waiting(ev, receive) > 0)
+	 {
+	  SIM_CAST(t_rs_control, Instruction, ev);
+	  Register.instrn = Instruction.instrn;
+	  Register.tag_no  = Instruction.tag_no;
+	  if (Register.instrn.function == t_cdb_instrn_set::VOID)
+	    strcpy(FUNC, "FREE");
+	  else if (Register.instrn.function == t_cdb_instrn_set::ADD)
+	    strcpy(FUNC, "ADD");
+	  else if (Register.instrn.function == t_cdb_instrn_set::SUB)
+	    strcpy(FUNC, "SUB");
+	  else if (Register.instrn.function == t_cdb_instrn_set::MUL)
+	    strcpy(FUNC, "MUL");
+	  else if (Register.instrn.function == t_cdb_instrn_set::DIV)
+	    strcpy(FUNC, "DIV");
+	  dump_state();
+	 }
+
+$phase1
+
+// if output_to_au is set, send content of register to arithmetic unit
+	 if (output_to_au == 1)
+	  {
+	   send_CONTROL(output, Register);
+	   output_to_au = 0;
+	   }
+
+
+
+
+
+

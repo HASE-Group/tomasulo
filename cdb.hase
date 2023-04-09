@@ -1,0 +1,880 @@
+// Project:	Tomasulo's Algorithm
+// Entity	Common Data Bus
+// File		cdb.hase
+// Date:	2 July 2001
+
+// The CDB receives input requests from the Decoder, the Floating-point
+// Registers, the Floating-point Buffers and the Arithmetic Units.
+// The Decoder sends a packet containing:
+// the Sink and Source Tag numbers,
+// the Sink and Source destination (RS) register numbers,
+// the instruction
+//
+// The CDB uses the Sink destination number to select the RS
+// Control register to which it will send the instruction (and the RS output
+// Tag number because these registers don't know their own number).
+// The RS Tag numbers are:
+// Add Reservation Station 1	- 7
+// Add Reservation Station 2	- 8
+// Add Reservation Station 3	- 9
+// Mul Reservation Station 1	- 10
+// Mul Reservation Station 2	- 11
+// (Tag numbers 1 - 6 correspond to the Floating-point Buffers)
+
+// It sends the sink tag value to the RS (if it's 0 the Decoder will have
+// requested the data from the Sink Register itself) and to the RS Sink
+// Tag display register (selected by the RS Sink register number).
+//
+// It sends the source tag to the RS (if it's 0 the Decoder will have requested
+// the data from the Source Register itself) and to the RS Source Tag display
+// register (selected by the RS Source register number).
+//
+// Results from the arithmetic units and input values from the Floating-point
+// Registers and Floating-point Buffers are sent to the CDB, which sends
+// values to the Reservation Stations, the Floating-point registers,
+// and the Store Data Buffers
+
+$class_includes
+class add;
+class mul;
+class add_res;
+class mul_res;
+class decoder;
+
+$class_decls
+
+//entity references
+  sim_entity_id adder;
+  sim_entity_id multiplier;
+  sim_entity_id decode;
+
+  sim_port tag_reg[17];		// array of tag register port addresses
+  sim_port opr_reg[17];		// array of output operand port addresses
+  sim_port con_reg[5];		// array of control register port addresses
+
+  add * myADD;
+  mul * myMUL;
+  add_res * myADD_RS;
+  mul_res * myMUL_RS;
+  decoder * myDecoder;
+//structures and variables
+
+  int opr_reg_full[10];		// array of operand register full bits
+				// opr_reg_full[0] = add RS 1 sink
+				// opr_reg_full[1] = add RS 1 source
+				// opr_reg_full[2] = add RS 2 sink
+				// opr_reg_full[3] = add RS 2 source
+				// opr_reg_full[4] = add RS 3 sink
+				// opr_reg_full[5] = mul RS 3 source
+				// opr_reg_full[6] = mul RS 1 sink
+				// opr_reg_full[7] = mul RS 1 source
+				// opr_reg_full[8] = mul RS 2 sink
+				// opr_reg_full[9] = mul RS 2 source
+  int tag_no;
+  char char_buff[20], print_buff[20];
+  
+  t_reg_args snk_args, src_args;	// structures for holding
+					//decoded register arguments
+  int snk, src;				// sink, source register number
+  char snkT, srcT;			// sink, source register types
+
+  int Valid_instrn;
+  int i;
+  int port;
+  int flb_input;
+  int add_input;
+  int mul_input;
+  int instr_input;
+  int process_mul;
+  int process_add;
+  int process_instr;
+  int instr_held;
+  int send_dec_pkts;
+  int send_cdb_snk_opr;	// send flags
+  int send_cdb_src_opr;
+  int send_snk_tag;
+  int send_src_tag;
+  int send_to_control;
+  int send_sdb_tag;
+  int send_sdb_opr;
+  int FPR_inputs;
+
+  t_cdb_instrn_set CDB_Instruction;
+  t_au_output AU_Output;
+  t_operand_reg FPR_Operand, AU_Result;
+  t_rs_control CDB_Control_Output, CDB_Control_Clear;
+  t_decoder_pkt Decoder_Input;	// Contains the following fields:
+				// snk_reg	- sink register number
+				// src_reg	- source register number
+				// snk_dest	- sink RS register number
+				// src_dest	- source RS register number
+				// instrn	- the instruction
+
+// registers to hold FLB inputs
+
+  t_operand_reg FLB_Op;
+  int FLB2FPR_opr, FLB2FPR_tag_no;
+
+
+// registers to hold FPR inputs
+
+  t_operand_reg FPR2RS_snk_opr, FPR2RS_src_opr;	// FPR Operands to RS
+  int FPR2RS_snk_dest, FPR2RS_src_dest;	// RS register nos for FPR operands
+
+// registers to hold outputs to Reservation Stations
+
+  int CDB2RS_snk_opr, CDB2RS_src_opr;	// Operands to RS
+  int CDB2RS_snk_tag, CDB2RS_src_tag;		// Tag values to RS
+  int CDB2RS_snk_dest, CDB2RS_src_dest;		// RS register nos for Tags
+  int CDB2RS_snk_reg, CDB2RS_src_reg;		// Sink/Source register nos
+  int rsc_no, rsc_cl_no;			// RS control reg number
+
+// registers to hold outputs to Reservation Stations
+
+  int CDB2SDB_snk_opr;	
+  int CDB2SDB_snk_tag;
+  int CDB2SDB_snk_dest;
+
+
+$pre
+
+  adder      = sim.get_entity_id("ADD");
+  multiplier = sim.get_entity_id("MUL");
+  decode     = sim.get_entity_id("DECODER");
+
+  myADD     = (add*)sim.get_entity(adder);
+  myMUL     = (mul*)sim.get_entity(multiplier);
+  myDecoder = (decoder*)sim.get_entity(decode);
+  myADD_RS  = (add_res*)sim.get_entity(sim.get_entity_id("ADD_RES"));
+  myMUL_RS  = (mul_res*)sim.get_entity(sim.get_entity_id("MUL_RES"));
+
+// set up port identifiers
+
+tag_reg[0] = to_fp_r0_tag;		//  Floating-Point Register 0
+tag_reg[1] = to_fp_r1_tag;		//  Floating-Point Register 1
+tag_reg[2] = to_fp_r2_tag;		//  Floating-Point Register 2
+tag_reg[3] = to_fp_r3_tag;		//  Floating-Point Register 3
+tag_reg[4] = to_add_res1_snk_tag;	//  add reservation station 1 sink
+tag_reg[5] = to_add_res1_src_tag;	//  add reservation station 1 source
+tag_reg[6] = to_add_res2_snk_tag;	//  add reservation station 2 sink
+tag_reg[7] = to_add_res2_src_tag;	//  add reservation station 2 source
+tag_reg[8] = to_add_res3_snk_tag;	//  add reservation station 3 sink
+tag_reg[9] = to_add_res3_src_tag;	//  add reservation station 3 source
+tag_reg[10] = to_mul_res1_snk_tag;	//  mul reservation station 1 sink
+tag_reg[11] = to_mul_res1_src_tag;	//  mul reservation station 1 source
+tag_reg[12] = to_mul_res2_snk_tag;	//  mul reservation station 2 sink
+tag_reg[13] = to_mul_res2_src_tag;	//  mul reservation station 2 source
+tag_reg[14] = to_sdb1_tag;		//  store data buffer 1
+tag_reg[15] = to_sdb2_tag;		//  store data buffer 2
+tag_reg[16] = to_sdb3_tag;		//  store data buffer 3
+
+opr_reg[0] = to_fp_r0_opr;
+opr_reg[1] = to_fp_r1_opr;
+opr_reg[2] = to_fp_r2_opr;
+opr_reg[3] = to_fp_r3_opr;
+opr_reg[4] = to_add_res1_snk_opr;
+opr_reg[5] = to_add_res1_src_opr;
+opr_reg[6] = to_add_res2_snk_opr;
+opr_reg[7] = to_add_res2_src_opr;
+opr_reg[8] = to_add_res3_snk_opr;
+opr_reg[9] = to_add_res3_src_opr;
+opr_reg[10] = to_mul_res1_snk_opr;
+opr_reg[11] = to_mul_res1_src_opr;
+opr_reg[12] = to_mul_res2_snk_opr;
+opr_reg[13] = to_mul_res2_src_opr;
+opr_reg[14] = to_sdb1_opr;
+opr_reg[15] = to_sdb2_opr;
+opr_reg[16] = to_sdb3_opr;
+
+con_reg[0] = to_add_res1_control;
+con_reg[1] = to_add_res2_control;
+con_reg[2] = to_add_res3_control;
+con_reg[3] = to_mul_res1_control;
+con_reg[4] = to_mul_res2_control;
+
+// initialise variables
+
+  Valid_instrn = 0;
+  port = -1;
+  tag_no = 0;
+  flb_input = 0;
+  add_input = 0;
+  mul_input = 0;
+  instr_input = 0;
+  process_mul = 0;
+  process_add = 0;
+  process_instr = 0;
+  instr_held = 0;
+  send_dec_pkts = 0;
+  send_cdb_snk_opr = 0;	// send flags
+  send_cdb_src_opr = 0;
+  send_snk_tag = 0;
+  send_src_tag = 0;
+  send_to_control = 0;
+  send_sdb_tag = 0;
+  send_sdb_opr = 0;
+
+$phase0
+// First phase of clock
+
+// predicate declarations
+  sim_from_port mul_result(from_mul);
+  sim_from_port add_result(from_add);
+  sim_from_port instruction(from_decoder);
+
+  sim_from_port flb1_operand(from_flb1);
+  sim_from_port flb2_operand(from_flb2);
+  sim_from_port flb3_operand(from_flb3);
+  sim_from_port flb4_operand(from_flb4);
+  sim_from_port flb5_operand(from_flb5);
+  sim_from_port flb6_operand(from_flb6);
+
+  sim_from_port fpr0_operand(from_fpr0_opr);
+  sim_from_port fpr1_operand(from_fpr1_opr);
+  sim_from_port fpr2_operand(from_fpr2_opr);
+  sim_from_port fpr3_operand(from_fpr3_opr);
+
+// During ClockPhase 1, several units may have sent packets to the CDB:
+//
+// Decoder and Floating-point registers
+// Floating-point buffers
+// MUL unit
+// ADD unit
+//
+// As only one of the last three can be dealt with in each clock period,
+// they are taken in the priority order in which they are listed above.
+// In the original IBM scheme, the ADD unit had to give 2 cycles notice.
+// Here each sending unit sets itself Held and only frees when it gets
+// an acknowledge from the CDB.
+
+// The Decoder packet must be processed since it will have
+// checked its tags in the previous clock and all incoming tags must
+// be re-checked against the one in the CDB, even it it doesn't get
+// sent in the present clock (which it can't be if any of the other
+// units have sent). So an extra flag is used to control sending a
+// Decoder packet to the Reservation Stations.
+
+// Test for packet from Decoder
+
+  if (sim_waiting(ev, instruction) > 0)
+   {
+    instr_input = 1;
+    SIM_CAST(t_decoder_pkt, Decoder_Input, ev);
+    Valid_instrn = Decoder_Input.status;
+    CDB_Instruction = Decoder_Input.instrn;
+   }
+  if (instr_input == 1)
+   {
+    if ((Valid_instrn == 1) && (instr_held == 0))
+     {
+      if (CDB_Instruction.function == t_cdb_instrn_set::ST)
+       {
+// Copy Sink destination number to the CDB2SDB output register
+// Copy Sink FP Register tag to CDB2SDB output register and set send flag;
+// if tag = 0, Decoder will have told FP Register to send its operand 
+
+	CDB2SDB_snk_dest = Decoder_Input.snk_dest + 13;
+	CDB2SDB_snk_tag = Decoder_Input.src_tag;
+
+// If source tag = 0, get packet from FPR
+
+	if (CDB2SDB_snk_tag == 0)
+	 {
+          if ((sim_waiting(ev, fpr0_operand) > 0)
+	   || (sim_waiting(ev, fpr1_operand) > 0)
+	   || (sim_waiting(ev, fpr2_operand) > 0)
+	   || (sim_waiting(ev, fpr3_operand) > 0)) {
+		SIM_CAST(t_operand_reg, FPR_Operand, ev);
+		CDB2SDB_snk_opr = FPR_Operand.operand;
+//	  CDB2SDB_snk_opr.reg_no = Decoder_Input.snk_dest;
+	        send_sdb_opr = 1;
+          }
+	 }	// end of sink tag = 0
+	else
+	  send_sdb_tag = 1;
+
+       }	// end of ST
+
+    else if (Decode_AU_Op(CDB_Instruction) == 1)
+     {
+// Copy Sink & Source destination numbers to the CDB2RS output registers
+// Copy Sink & Source FP Register tags to CDB2RS output registers and set send
+// flags; 
+
+	CDB2RS_snk_dest		= Decoder_Input.snk_dest;
+	CDB2RS_snk_tag		= Decoder_Input.snk_tag;
+	send_snk_tag = 1;
+	FPR2RS_snk_dest = Decoder_Input.snk_dest;
+
+	CDB2RS_src_dest		= Decoder_Input.src_dest;
+	CDB2RS_src_tag		= Decoder_Input.src_tag;
+	send_src_tag = 1;
+	FPR2RS_src_dest = CDB2RS_src_dest;
+
+// copy input instruction to output
+
+	CDB_Control_Output.instrn = Decoder_Input.instrn;
+
+// Create output tag for Reservation Station (sent to Control register)
+
+	// Add Reservation Station 1 tag = 7
+	// Add Reservation Station 2 tag = 8
+	// Add Reservation Station 3 tag = 9
+	// Mul Reservation Station 1 tag = 10
+	// Mul Reservation Station 2 tag = 11
+
+	CDB_Control_Output.tag_no = Decoder_Input.snk_dest/2 + 5;
+	rsc_no = CDB_Control_Output.tag_no - 7;
+	if ((rsc_no == 0) || (rsc_no == 1) || (rsc_no == 2))
+	 {send_to_control = 1;}					// Adder
+	if ((rsc_no == 3) || (rsc_no == 4))
+	 {send_to_control = 2;}					//Multiplier
+
+// Work out how many packets to expect from FPRs 
+
+	FPR_inputs = 0;
+
+	snk_args = Decode_Register(CDB_Instruction.rr_field.snk_reg);
+	snkT = snk_args.type;		// Sink register type
+	if (snkT == 'F')
+	 {FPR_inputs++;}
+
+	src_args = Decode_Register(CDB_Instruction.rr_field.src_reg);
+	srcT = src_args.type;		// Sink register type
+	if (srcT == 'F')
+	 {FPR_inputs++;}
+
+	while (FPR_inputs > 0)
+	{
+// Deal with packets from Floating-point Registers (may be Sink or Source)
+// Operand contains a value and the RS register no. to which it is to be sent
+
+          if ((sim_waiting(ev, fpr0_operand) > 0)
+	   || (sim_waiting(ev, fpr1_operand) > 0)
+	   || (sim_waiting(ev, fpr2_operand) > 0)
+	   || (sim_waiting(ev, fpr3_operand) > 0)) {
+
+	     SIM_CAST(t_operand_reg, FPR_Operand, ev);
+          }
+	  if (((FPR_Operand.reg_no == 4)
+	    ||(FPR_Operand.reg_no == 6)
+	    ||(FPR_Operand.reg_no == 8))
+	    &&(FPR_Operand.tag_no == 0))
+	    {
+	     CDB2RS_snk_opr = FPR_Operand.operand;
+	     send_cdb_snk_opr = 1;			// Add RS
+	    }
+	  else if (((FPR_Operand.reg_no == 10)
+	         ||(FPR_Operand.reg_no == 12))
+	         &&(FPR_Operand.tag_no == 0))
+	    {
+	     CDB2RS_snk_opr = FPR_Operand.operand;
+	     send_cdb_snk_opr = 2;			// Mul RS
+	    }
+	  else if (((FPR_Operand.reg_no == 5)
+		 ||(FPR_Operand.reg_no == 7)
+		 ||(FPR_Operand.reg_no == 9))
+	         &&(FPR_Operand.tag_no == 0))
+	    {
+	     CDB2RS_src_opr = FPR_Operand.operand;
+	     send_cdb_src_opr = 1;			// Add RS
+	    }
+	  else if (((FPR_Operand.reg_no == 11)
+		 ||(FPR_Operand.reg_no == 13))
+	         &&(FPR_Operand.tag_no == 0))
+	    {
+	     CDB2RS_src_opr = FPR_Operand.operand;
+	     send_cdb_src_opr = 2;			// Mul RS
+	    }
+
+	 FPR_inputs--;
+	}	// end of while loop
+       }	// end of AU function
+     }		// end of Valid instruction
+    }		// end of DECODER_PKT
+
+// Deal with packet from Floating-point Buffer (FLB)
+
+  if ((sim_waiting(ev, flb1_operand) > 0)
+    || (sim_waiting(ev, flb2_operand) > 0)
+    || (sim_waiting(ev, flb3_operand) > 0)
+    || (sim_waiting(ev, flb4_operand) > 0)
+    || (sim_waiting(ev, flb5_operand) > 0)
+    || (sim_waiting(ev, flb6_operand) > 0))
+    flb_input = 1;
+
+// Test for packet from Multiplier
+
+  if (sim_waiting(mul_result) > 0)
+   {mul_input = 1;
+}
+
+// Test for packet from Adder
+
+  if (sim_waiting(add_result) > 0)
+   {add_input = 1;}
+
+// select request to be dealt with according to priority order
+// flb_input is always dealt with. (Only) one of the remaining can be
+// dealt with as well
+// mul_input
+// add_input
+// instr_input
+// if instruction is held up, set instr_held
+
+  if (mul_input == 1)
+   {process_mul = 1;
+}
+
+  if ((mul_input == 0) && (add_input == 1))
+   {process_add = 1;}
+
+  if ((mul_input == 0)
+   && (add_input == 0) && (instr_input == 1))
+   {process_instr = 1;
+    instr_held = 0;}
+
+  if (((mul_input == 1)
+    || (add_input == 1)) && (instr_input == 1))
+   {instr_held = 1;}
+
+// Deal with FLB input
+
+  if (flb_input == 1)
+   {
+    SIM_CAST(t_operand_reg, FLB_Op, ev);
+
+// Check FLB tag against waiting CDB2RS packet. If FLB tag = snk or src tag,
+// update tag array for snk/src, set RS tag field = 0, copy FLB operand
+// to FLB to FPR2RS operand field and destination number to FPR2RS reg_no
+
+	if ((FLB_Op.reg_no == CDB2RS_snk_tag) && (send_snk_tag == 1))
+	 {
+	  CDB2RS_snk_opr = FLB_Op.operand;
+	  CDB2RS_snk_tag = 0;
+	  myDecoder->Reset_tag(CDB2RS_snk_dest);
+	  send_cdb_snk_opr = send_to_control;	// Adder or Multiplier
+	  send_snk_tag = 0;			// Don't send tag
+	 }
+
+	if ((FLB_Op.reg_no == CDB2RS_src_tag) && (send_src_tag == 1))
+	 {
+	  CDB2RS_src_opr = FLB_Op.operand;
+	  CDB2RS_src_tag = 0;
+	  myDecoder->Reset_tag(CDB2RS_src_dest);
+	  send_cdb_src_opr = send_to_control;	// Adder or Multiplier
+	  send_src_tag = 0;			// Don't send tag
+	 }
+
+// Check FLB tag against waiting SDB packet
+
+	if ((FLB_Op.reg_no == CDB2SDB_snk_tag) && (send_sdb_tag == 1))
+	 {
+	  CDB2SDB_snk_opr = FLB_Op.operand;
+	  CDB2SDB_snk_tag = 0;
+	  myDecoder->Reset_tag(CDB2SDB_snk_dest);
+	  send_sdb_opr = 1;
+	  send_sdb_tag = 0;
+	 }
+
+// send operand to Register with matching tag, update tag array and display
+
+    for (i=0; i<17; i++)		// search tag contents array
+     {
+      if (myDecoder->Read_tag_regs(i) == FLB_Op.reg_no)
+      {
+	myDecoder->Reset_tag(i);
+	send_VALUE(opr_reg[i], FLB_Op.operand);
+	if ((i > 3) && (i < 10))			// Add RS
+	 {myADD_RS->SetFull(i);}
+	else if (i > 9)					// Mul RS
+	 {myMUL_RS->SetFull(i);}
+
+ 	switch (FLB_Op.reg_no)
+	 {				// send packet to tag display
+	  case 1:
+	  send_TAG1(tag_reg[i], FLB_Op.reg_no);
+	  break;
+	  case 2:
+	  send_TAG2(tag_reg[i], FLB_Op.reg_no);
+	  break;
+	  case 3:
+	  send_TAG3(tag_reg[i], FLB_Op.reg_no);
+	  break;
+	  case 4:
+	  send_TAG4(tag_reg[i], FLB_Op.reg_no);
+	  break;
+	  case 5:
+	  send_TAG5(tag_reg[i], FLB_Op.reg_no);
+	  break;
+	  case 6:
+	  send_TAG6(tag_reg[i], FLB_Op.reg_no);
+	  break;
+	 }
+       }
+     }
+    flb_input = 0;
+   }		// end of flb_input
+
+// Deal with packet from Multiplier
+
+  if (process_mul == 1)
+   {
+    sim_select (mul_result, ev);
+    SIM_CAST(t_au_output, AU_Output, ev);
+    myMUL->Clear_CDB_Hold();
+
+// Check tag against waiting RS tags and update tag and operand if =
+
+	if ((AU_Output.tag_no == CDB2RS_snk_tag) && (send_snk_tag == 1))
+	 {
+	  CDB2RS_snk_opr = AU_Output.operand;
+	  CDB2RS_snk_tag = 0;
+	  myDecoder->Reset_tag(CDB2RS_snk_dest);
+	  send_cdb_snk_opr = send_to_control;	// Adder or Multiplier
+	  send_snk_tag = 0;
+	 }
+
+	if ((AU_Output.tag_no == CDB2RS_src_tag) && (send_src_tag == 1))
+	 {
+	  CDB2RS_src_opr = AU_Output.operand;
+	  CDB2RS_src_tag = 0;
+	  myDecoder->Reset_tag(CDB2RS_src_dest);
+	  send_cdb_src_opr = send_to_control;	// Adder or Multiplier
+	  send_src_tag = 0;
+	 }
+
+// Check tag against waiting SDB packet
+
+	if ((AU_Output.tag_no == CDB2SDB_snk_tag) && (send_sdb_tag == 1))
+	 {
+	  CDB2SDB_snk_opr = AU_Output.operand;
+	  CDB2SDB_snk_tag = 0;
+	  myDecoder->Reset_tag(CDB2SDB_snk_dest);
+	  send_sdb_opr = 1;
+	  send_sdb_tag = 0;
+	 }
+
+    for (i=0; i<17; i++)		// search tag contents array
+     {if (myDecoder->Read_tag_regs(i) == AU_Output.tag_no)
+       {
+	myDecoder->Reset_tag(i);
+	AU_Result.operand = AU_Output.operand;
+	AU_Result.reg_no = i;
+	send_VALUE(opr_reg[i], AU_Result.operand);
+					//send packet to register
+	if ((i > 3) && (i < 10))
+	 {myADD_RS->SetFull(i);}
+	if ((i > 9) && (i < 14))
+	 {myMUL_RS->SetFull(i);}
+ 	switch (AU_Output.tag_no)
+	 {
+	  case 7:			// send packet to tag display
+	  send_TAG7(tag_reg[i], AU_Output.tag_no);
+	  break;
+	  case 8:
+	  send_TAG8(tag_reg[i], AU_Output.tag_no);
+	  break;
+	  case 9:
+	  send_TAG9(tag_reg[i], AU_Output.tag_no);
+	  break;
+	  case 10:
+	  send_TAG10(tag_reg[i], AU_Output.tag_no);
+	  break;
+	  case 11:
+	  send_TAG11(tag_reg[i], AU_Output.tag_no);
+	  break;
+	 }
+	mul_input = 0;
+	process_mul = 0;
+       }
+     }	// end of for loop
+		myDecoder->ClearResBusy(AU_Output.tag_no); // clear res_busy
+		rsc_cl_no = AU_Output.tag_no - 7;
+		CDB_Control_Clear.instrn.reset();
+         	sim_schedule(con_reg[rsc_cl_no], 0.0, CONTROL,
+		SIM_PUT(t_rs_control, CDB_Control_Clear)); // clear RS
+	   }	// end of process_mul = 1
+
+// Deal with packet from Adder
+    if (process_add == 1)
+     {
+      sim_select (add_result, ev);
+      SIM_CAST(t_au_output, AU_Output, ev);
+      myADD->Clear_CDB_Hold();
+
+// Check tag against waiting RS tags and update tag and operand if =
+
+	if ((AU_Output.tag_no == CDB2RS_snk_tag) && (send_snk_tag == 1))
+	 {
+	  CDB2RS_snk_opr = AU_Output.operand;
+	  CDB2RS_snk_tag = 0;
+	  myDecoder->Reset_tag(CDB2RS_snk_dest);
+	  send_cdb_snk_opr = send_to_control;	// Adder or Multiplier
+	  send_snk_tag = 0;
+	 }
+
+	if ((AU_Output.tag_no == CDB2RS_src_tag) && (send_src_tag == 1))
+	 {
+	  CDB2RS_src_opr = AU_Output.operand;
+	  CDB2RS_src_tag = 0;
+	  myDecoder->Reset_tag(CDB2RS_src_dest);
+	  send_cdb_src_opr = send_to_control;	// Adder or Multiplier
+	  send_src_tag = 0;
+	 }
+
+// Check tag against waiting SDB packet
+
+	if ((AU_Output.tag_no == CDB2SDB_snk_tag) && (send_sdb_tag == 1))
+	 {
+	  CDB2SDB_snk_opr = AU_Output.operand;
+	  CDB2SDB_snk_tag = 0;
+	  myDecoder->Reset_tag(CDB2SDB_snk_dest);
+	  send_sdb_opr = 1;
+	  send_sdb_tag = 0;
+	 }
+
+
+      for (i=0; i<17; i++)		// search tag contents array
+       {if (myDecoder->Read_tag_regs(i) == AU_Output.tag_no)
+        {
+	 myDecoder->Reset_tag(i);
+	 AU_Result.operand = AU_Output.operand;
+	 AU_Result.reg_no = i;
+	 send_VALUE(opr_reg[i], AU_Result.operand);
+					//send packet to register
+	 if ((i > 3) && (i < 10))
+	  {myADD_RS->SetFull(i);}
+	 if ((i > 9) && (i < 14))
+	  {myMUL_RS->SetFull(i);}
+ 	switch (AU_Output.tag_no)
+	 {
+	  case 7:			// send packet to tag display
+	  send_TAG7(tag_reg[i], AU_Output.tag_no);
+	  break;
+	  case 8:
+	  send_TAG8(tag_reg[i], AU_Output.tag_no);
+	  break;
+	  case 9:
+	  send_TAG9(tag_reg[i], AU_Output.tag_no);
+	  break;
+	  case 10:
+	  send_TAG10(tag_reg[i], AU_Output.tag_no);
+	  break;
+	  case 11:
+	  send_TAG11(tag_reg[i], AU_Output.tag_no);
+	  break;
+	 }
+	add_input = 0;
+	process_add = 0;
+	}
+	     }	// end of for loop
+		myDecoder->ClearResBusy(AU_Output.tag_no); // clear res_busy
+		rsc_cl_no = AU_Output.tag_no - 7;
+		CDB_Control_Clear.instrn.reset();
+         	sim_schedule(con_reg[rsc_cl_no], 0.0, CONTROL,
+		SIM_PUT(t_rs_control, CDB_Control_Clear)); // clear RS
+	   }	// end of process_add = 1
+
+
+  if (process_instr == 1)
+    {
+// set Valid_instrn = 0 and send ack to decoder
+        Valid_instrn = 0;
+        myDecoder->Clear_CDB_Hold();
+	send_dec_pkts = 1;
+	instr_input = 0;
+	process_instr = 0;
+
+    }
+
+// end of clock phase 0 was here
+
+// ClockPhase==1
+
+	 if (send_dec_pkts == 1)
+	  {
+	  if (send_sdb_tag == 1)
+	   {
+	    switch (CDB2SDB_snk_tag)
+	     {
+	      case 1:
+	      send_TAG1(tag_reg[CDB2SDB_snk_dest], CDB2SDB_snk_tag);
+	      break;
+	      case 2:
+	      send_TAG2(tag_reg[CDB2SDB_snk_dest], CDB2SDB_snk_tag);
+	      break;
+	      case 3:
+	      send_TAG3(tag_reg[CDB2SDB_snk_dest], CDB2SDB_snk_tag);
+	      break;
+	      case 4:
+	      send_TAG4(tag_reg[CDB2SDB_snk_dest], CDB2SDB_snk_tag);
+	      break;
+	      case 5:
+	      send_TAG5(tag_reg[CDB2SDB_snk_dest], CDB2SDB_snk_tag);
+	      break;
+	      case 6:
+	      send_TAG6(tag_reg[CDB2SDB_snk_dest], CDB2SDB_snk_tag);
+	      break;
+	      case 7:
+	      send_TAG7(tag_reg[CDB2SDB_snk_dest], CDB2SDB_snk_tag);
+	      break;
+	      case 8:
+	      send_TAG8(tag_reg[CDB2SDB_snk_dest], CDB2SDB_snk_tag);
+	      break;
+	      case 9:
+	      send_TAG9(tag_reg[CDB2SDB_snk_dest], CDB2SDB_snk_tag);
+	      break;
+	      case 10:
+	      send_TAG10(tag_reg[CDB2SDB_snk_dest], CDB2SDB_snk_tag);
+	      break;
+	      case 11:
+	      send_TAG11(tag_reg[CDB2SDB_snk_dest], CDB2SDB_snk_tag);
+	      break;
+	      }
+	   send_sdb_tag = 0;
+	   }
+	   if (send_sdb_opr == 1)
+		{send_VALUE(opr_reg[CDB2SDB_snk_dest], CDB2SDB_snk_opr);
+	 	 send_sdb_opr = 0;
+		}
+// If send Source Tag flag is set, send Source Tag to RS Sink Tag register,
+// and reset flag
+
+	  if (send_src_tag == 1)
+	   {
+	    switch (CDB2RS_src_tag)
+	     {
+	      case 1:
+	      send_TAG1(tag_reg[CDB2RS_src_dest], CDB2RS_src_tag);
+	      break;
+	      case 2:
+	      send_TAG2(tag_reg[CDB2RS_src_dest], CDB2RS_src_tag);
+	      break;
+	      case 3:
+	      send_TAG3(tag_reg[CDB2RS_src_dest], CDB2RS_src_tag);
+	      break;
+	      case 4:
+	      send_TAG4(tag_reg[CDB2RS_src_dest], CDB2RS_src_tag);
+	      break;
+	      case 5:
+	      send_TAG5(tag_reg[CDB2RS_src_dest], CDB2RS_src_tag);
+	      break;
+	      case 6:
+	      send_TAG6(tag_reg[CDB2RS_src_dest], CDB2RS_src_tag);
+	      break;
+	      case 7:
+	      send_TAG7(tag_reg[CDB2RS_src_dest], CDB2RS_src_tag);
+	      break;
+	      case 8:
+	      send_TAG8(tag_reg[CDB2RS_src_dest], CDB2RS_src_tag);
+	      break;
+	      case 9:
+	      send_TAG9(tag_reg[CDB2RS_src_dest], CDB2RS_src_tag);
+	      break;
+	      case 10:
+	      send_TAG10(tag_reg[CDB2RS_src_dest], CDB2RS_src_tag);
+	      break;
+	      case 11:
+	      send_TAG11(tag_reg[CDB2RS_src_dest], CDB2RS_src_tag);
+	      break;
+	      }
+	    send_src_tag = 0;
+	   }
+
+// If send Sink Tag flag is set, send Sink Tag to RS Sink Tag register
+// and reset flag 
+
+	 if (send_snk_tag == 1)
+	  {
+	    switch (CDB2RS_snk_tag)
+	     {
+	      case 1:
+	      send_TAG1(tag_reg[CDB2RS_snk_dest], CDB2RS_snk_tag);
+	      break;
+	      case 2:
+	      send_TAG2(tag_reg[CDB2RS_snk_dest], CDB2RS_snk_tag);
+	      break;
+	      case 3:
+	      send_TAG3(tag_reg[CDB2RS_snk_dest], CDB2RS_snk_tag);
+	      break;
+	      case 4:
+	      send_TAG4(tag_reg[CDB2RS_snk_dest], CDB2RS_snk_tag);
+	      break;
+	      case 5:
+	      send_TAG5(tag_reg[CDB2RS_snk_dest], CDB2RS_snk_tag);
+	      break;
+	      case 6:
+	      send_TAG6(tag_reg[CDB2RS_snk_dest], CDB2RS_snk_tag);
+	      break;
+	      case 7:
+	      send_TAG7(tag_reg[CDB2RS_snk_dest], CDB2RS_snk_tag);
+	      break;
+	      case 8:
+	      send_TAG8(tag_reg[CDB2RS_snk_dest], CDB2RS_snk_tag);
+	      break;
+	      case 9:
+	      send_TAG9(tag_reg[CDB2RS_snk_dest], CDB2RS_snk_tag);
+	      break;
+	      case 10:
+	      send_TAG10(tag_reg[CDB2RS_snk_dest], CDB2RS_snk_tag);
+	      break;
+	      case 11:
+	      send_TAG11(tag_reg[CDB2RS_snk_dest], CDB2RS_snk_tag);
+	      break;
+	      }
+	   send_snk_tag = 0;
+	   }
+// If operand(s) ready, send operand(s) to RS Sink/Source
+// Operand register(s), notify RS that the register is full and reset flag
+
+	   if (send_cdb_snk_opr == 1)
+		{send_VALUE(opr_reg[CDB2RS_snk_dest], CDB2RS_snk_opr);
+		 myADD_RS->SetFull(CDB2RS_snk_dest);
+	 	 send_cdb_snk_opr = 0;
+		}
+	   else if (send_cdb_snk_opr == 2)
+		{send_VALUE(opr_reg[CDB2RS_snk_dest], CDB2RS_snk_opr);
+		 myMUL_RS->SetFull(CDB2RS_snk_dest);
+	 	 send_cdb_snk_opr = 0;
+		}
+
+	   if (send_cdb_src_opr == 1)
+		{send_VALUE(opr_reg[CDB2RS_src_dest], CDB2RS_src_opr);
+		 myADD_RS->SetFull(CDB2RS_src_dest);
+	 	 send_cdb_src_opr = 0;
+		}
+	   else if (send_cdb_src_opr == 2)
+		{send_VALUE(opr_reg[CDB2RS_src_dest], CDB2RS_src_opr);
+		 myMUL_RS->SetFull(CDB2RS_src_dest);
+	 	 send_cdb_src_opr = 0;
+		}
+
+// If send to Control flag is set, send instruction to RS Control Register,
+// notify RS that its register is full and reset flag
+
+	if (send_to_control == 1)
+		{
+		 send_CONTROL(con_reg[rsc_no], CDB_Control_Output);
+		 rsc_no += 20;
+		 myADD_RS->SetFull(rsc_no);	// 20 added to distinguish
+						// rsc nos from opr nos
+		 send_to_control = 0;
+		}
+
+	else if (send_to_control == 2)
+		{
+		 send_CONTROL(con_reg[rsc_no], CDB_Control_Output);
+		 rsc_no += 20;
+		 myMUL_RS->SetFull(rsc_no);	// 20 added to distinguish
+						// rsc nos from opr nos
+		 send_to_control = 0;
+		}
+		 send_dec_pkts = 0;
+	  }
+
+// end of ClockPhase 0
+
+$phase1
+
+// do nothing during clock phase 1

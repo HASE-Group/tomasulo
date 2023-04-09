@@ -1,0 +1,327 @@
+SOURCE : position (10,10)
+SOURCE : port to_flos side RIGHT position 40
+SOURCE : port to_flb_text side BOTTOM position 50
+SOURCE : port from_sdb1 side RIGHT position 10 iCON portl
+SOURCE : port from_sdb2 side RIGHT position 10 iCON portl
+SOURCE : port from_sdb3 side RIGHT position 10 iCON portl
+
+FLB_TEXT : position (10,135)
+FLB_TEXT : port from_source side TOP position 50 ICON portd
+fpr_text : position (545,100)
+sdb_text : position (660,190)
+crest : position (675,30)
+
+FLOS : position (235,30)
+FLOS : STATES FLOS_IDLE:flos FLOS_BUSY:flos_busy
+FLOS : port from_source side LEFT position 20 ICON portr
+FLOS : port to_decoder side BOTTOM position 50
+FLOS : PARAM FLOS8 MODE VALUE POSITION (10,10)
+FLOS : PARAM FLOS7 MODE VALUE POSITION (10,30)
+FLOS : PARAM FLOS6 MODE VALUE POSITION (10,50)
+FLOS : PARAM FLOS5 MODE VALUE POSITION (10,70)
+FLOS : PARAM FLOS4 MODE VALUE POSITION (10,90)
+FLOS : PARAM FLOS3 MODE VALUE POSITION (10,110)
+FLOS : PARAM FLOS2 MODE VALUE POSITION (10,130)
+FLOS : PARAM FLOS1 MODE VALUE POSITION (10,150)
+
+DECODER : position (215,230)
+DECODER : STATES DECODER_IDLE:decoder DECODER_BUSY:decoder_busy DECODER_HELD:decoder_held
+DECODER : port from_flos side TOP position 70 ICON portd
+DECODER : port to_cdb side BOTTOM position 70
+DECODER : PARAM FUNC MODE VALUE POSITION (30,20)
+
+CDB : position (65,294)
+
+CDB : port from_decoder side TOP position 220
+
+CDB : port from_flb1 side TOP position 31
+CDB : port from_flb2 side TOP position 31
+CDB : port from_flb3 side TOP position 31
+CDB : port from_flb4 side TOP position 31
+CDB : port from_flb5 side TOP position 31
+CDB : port from_flb6 side TOP position 31
+
+CDB : port to_fp_r0_tag side TOP position 365
+CDB : port to_fp_r1_tag side TOP position 365
+CDB : port to_fp_r2_tag side TOP position 365
+CDB : port to_fp_r3_tag side TOP position 365
+
+CDB : port to_fp_r0_opr side TOP position 395
+CDB : port to_fp_r1_opr side TOP position 395
+CDB : port to_fp_r2_opr side TOP position 395
+CDB : port to_fp_r3_opr side TOP position 395
+
+CDB : port from_fpr0_opr side TOP position 466
+CDB : port from_fpr1_opr side TOP position 466
+CDB : port from_fpr2_opr side TOP position 466
+CDB : port from_fpr3_opr side TOP position 466
+
+CDB : port to_sdb1_tag side TOP position 495
+CDB : port to_sdb2_tag side TOP position 495
+CDB : port to_sdb3_tag side TOP position 495
+
+CDB : port to_sdb1_opr side TOP position 525
+CDB : port to_sdb2_opr side TOP position 525
+CDB : port to_sdb3_opr side TOP position 525
+
+CDB : port to_add_res1_snk_tag side TOP position 40
+CDB : port to_add_res1_snk_opr side TOP position 70
+CDB : port to_add_res1_src_tag side TOP position 145
+CDB : port to_add_res1_src_opr side TOP position 175
+CDB : port to_add_res1_control side TOP position 321
+
+CDB : port to_add_res2_snk_tag side TOP position 40
+CDB : port to_add_res2_snk_opr side TOP position 70
+CDB : port to_add_res2_src_tag side TOP position 145
+CDB : port to_add_res2_src_opr side TOP position 175
+CDB : port to_add_res2_control side TOP position 321
+
+CDB : port to_add_res3_snk_tag side TOP position 40
+CDB : port to_add_res3_snk_opr side TOP position 70
+CDB : port to_add_res3_src_tag side TOP position 145
+CDB : port to_add_res3_src_opr side TOP position 175
+CDB : port to_add_res3_control side TOP position 321
+
+CDB : port to_mul_res1_snk_tag side TOP position 345
+CDB : port to_mul_res1_snk_opr side TOP position 375
+CDB : port to_mul_res1_src_tag side TOP position 450
+CDB : port to_mul_res1_src_opr side TOP position 480
+CDB : port to_mul_res1_control side TOP position 626
+
+CDB : port to_mul_res2_snk_tag side TOP position 345
+CDB : port to_mul_res2_snk_opr side TOP position 375
+CDB : port to_mul_res2_src_tag side TOP position 450
+CDB : port to_mul_res2_src_opr side TOP position 480
+CDB : port to_mul_res2_control side TOP position 626
+
+CDB : port from_add side BOTTOM position 200
+CDB : port from_mul side BOTTOM position 505
+
+flb_reg : STATES FLB_REG:operand FLB_REG_BUSY:operand_busy
+FL_PT_BUF6 : position (30,135)
+FL_PT_BUF6 : PARAM FLB_Register MODE VALUE POSITION (10,2)
+FL_PT_BUF6 : port output side RIGHT position 10
+FL_PT_BUF5 : position (30,155)
+FL_PT_BUF5 : PARAM FLB_Register MODE VALUE POSITION (10,2)
+FL_PT_BUF5 : port output side RIGHT position 10
+FL_PT_BUF4 : position (30,175)
+FL_PT_BUF4 : PARAM FLB_Register MODE VALUE POSITION (10,2)
+FL_PT_BUF4 : port output side RIGHT position 10
+FL_PT_BUF3 : position (30,195)
+FL_PT_BUF3 : PARAM FLB_Register MODE VALUE POSITION (10,2)
+FL_PT_BUF3 : port output side RIGHT position 10
+FL_PT_BUF2 : position (30,215)
+FL_PT_BUF2 : PARAM FLB_Register MODE VALUE POSITION (10,2)
+FL_PT_BUF2 : port output side RIGHT position 10
+FL_PT_BUF1 : position (30,235)
+FL_PT_BUF1 : PARAM FLB_Register MODE VALUE POSITION (10,2)
+FL_PT_BUF1 : port output side RIGHT position 10
+
+FL_PT_REG3_TAG : position (435,95)
+FL_PT_REG3_TAG : PARAM cur_state MODE ENT_ICON POSITION (0,0)
+FL_PT_REG3_TAG : port input side LEFT position 10
+FL_PT_REG3_OPR : position (465,95)
+FL_PT_REG3_OPR : PARAM Register MODE VALUE POSITION (10,2)
+FL_PT_REG3_OPR : port input side LEFT position 10
+FL_PT_REG3_OPR : port output side RIGHT position 10
+
+FL_PT_REG2_TAG : position (435,115)
+FL_PT_REG2_TAG : PARAM cur_state MODE ENT_ICON POSITION (0,0)
+FL_PT_REG2_TAG : port input side LEFT position 10
+FL_PT_REG2_OPR : position (465,115)
+FL_PT_REG2_OPR : PARAM Register MODE VALUE POSITION (10,2)
+FL_PT_REG2_OPR : port input side LEFT position 10
+FL_PT_REG2_OPR : port output side RIGHT position 10
+
+FL_PT_REG1_TAG : position (435,135)
+FL_PT_REG1_TAG : PARAM cur_state MODE ENT_ICON POSITION (0,0)
+FL_PT_REG1_TAG : port input side LEFT position 10
+FL_PT_REG1_OPR : position (465,135)
+FL_PT_REG1_OPR : PARAM Register MODE VALUE POSITION (10,2)
+FL_PT_REG1_OPR : port input side LEFT position 10
+FL_PT_REG1_OPR : port output side RIGHT position 10
+
+FL_PT_REG0_TAG : position (435,155)
+FL_PT_REG0_TAG : PARAM cur_state MODE ENT_ICON POSITION (0,0)
+FL_PT_REG0_TAG : port input side LEFT position 10
+FL_PT_REG0_OPR : position (465,155)
+FL_PT_REG0_OPR : PARAM Register MODE VALUE POSITION (10,2)
+FL_PT_REG0_OPR : port input side LEFT position 10
+FL_PT_REG0_OPR : port output side RIGHT position 10
+
+sdb_reg : STATES SDB_REG:operand SDB_REG_BUSY:operand_busy
+SDB_REG3_TAG : position (565,195)
+SDB_REG3_TAG : PARAM cur_state MODE ENT_ICON POSITION (0,0)
+SDB_REG3_TAG : port input side LEFT position 10
+SDB_REG3_OPR : position (595,195)
+SDB_REG3_OPR : PARAM SDB_Register MODE VALUE POSITION (10,2)
+SDB_REG3_OPR : port input side LEFT position 10
+SDB_REG3_OPR : port output side RIGHT position 10
+
+SDB_REG2_TAG : position (565,215)
+SDB_REG2_TAG : PARAM cur_state MODE ENT_ICON POSITION (0,0)
+SDB_REG2_TAG : port input side LEFT position 10
+SDB_REG2_OPR : position (595,215)
+SDB_REG2_OPR : PARAM SDB_Register MODE VALUE POSITION (10,2)
+SDB_REG2_OPR : port input side LEFT position 10
+SDB_REG2_OPR : port output side RIGHT position 10
+
+SDB_REG1_TAG : position (565,235)
+SDB_REG1_TAG : PARAM cur_state MODE ENT_ICON POSITION (0,0)
+SDB_REG1_TAG : port input side LEFT position 10
+SDB_REG1_OPR : position (595,235)
+SDB_REG1_OPR : PARAM SDB_Register MODE VALUE POSITION (10,2)
+SDB_REG1_OPR : port input side LEFT position 10
+SDB_REG1_OPR : port output side RIGHT position 10
+
+rs_opr : STATES RS_OPR:operand RS_OPR_BUSY:operand_busy
+ADD_RES1_SNK_TAG : position  (110,320)
+ADD_RES1_SNK_TAG : PARAM cur_state MODE ENT_ICON POSITION (0,0)
+ADD_RES1_SNK_TAG : port input side LEFT position 10
+
+ADD_RES1_SNK_OPR : position  (140,320)
+ADD_RES1_SNK_OPR : PARAM Register MODE VALUE POSITION (10,2)
+ADD_RES1_SNK_OPR : port input side LEFT position 10
+ADD_RES1_SNK_OPR : port output side RIGHT position 10
+
+ADD_RES1_SRC_TAG : position  (215,320)
+ADD_RES1_SRC_TAG : PARAM cur_state MODE ENT_ICON POSITION (0,0)
+ADD_RES1_SRC_TAG : port input side LEFT position 10
+
+ADD_RES1_SRC_OPR : position  (245,320)
+ADD_RES1_SRC_OPR : PARAM Register MODE VALUE POSITION (10,2)
+ADD_RES1_SRC_OPR : port input side LEFT position 10
+ADD_RES1_SRC_OPR : port output side RIGHT position 10
+
+ADD_RES1_CONTROL : position  (330,320)
+ADD_RES1_CONTROL : PARAM FUNC MODE VALUE POSITION (10,2)
+ADD_RES1_CONTROL : port input side RIGHT position 10
+ADD_RES1_CONTROL : port output side LEFT position 10
+
+ADD_RES2_SNK_TAG : position  (110,340)
+ADD_RES2_SNK_TAG : PARAM cur_state MODE ENT_ICON POSITION (0,0)
+ADD_RES2_SNK_TAG : port input side LEFT position 10
+
+ADD_RES2_SNK_OPR : position  (140,340)
+ADD_RES2_SNK_OPR : PARAM Register MODE VALUE POSITION (10,2)
+ADD_RES2_SNK_OPR : port input side LEFT position 10
+ADD_RES2_SNK_OPR : port output side RIGHT position 10
+
+ADD_RES2_SRC_TAG : position  (215,340)
+ADD_RES2_SRC_TAG : PARAM cur_state MODE ENT_ICON POSITION (0,0)
+ADD_RES2_SRC_TAG : port input side LEFT position 10
+
+ADD_RES2_SRC_OPR : position  (245,340)
+ADD_RES2_SRC_OPR : PARAM Register MODE VALUE POSITION (10,2)
+ADD_RES2_SRC_OPR : port input side LEFT position 10
+ADD_RES2_SRC_OPR : port output side RIGHT position 10
+
+ADD_RES2_CONTROL : position  (330,340)
+ADD_RES2_CONTROL : PARAM FUNC MODE VALUE POSITION (10,2)
+ADD_RES2_CONTROL : port input side RIGHT position 10
+ADD_RES2_CONTROL : port output side LEFT position 10
+
+ADD_RES3_SNK_TAG : position  (110,360)
+ADD_RES3_SNK_TAG : PARAM cur_state MODE ENT_ICON POSITION (0,0)
+ADD_RES3_SNK_TAG : port input side LEFT position 10
+
+ADD_RES3_SNK_OPR : position  (140,360)
+ADD_RES3_SNK_OPR : PARAM Register MODE VALUE POSITION (10,2)
+ADD_RES3_SNK_OPR : port input side LEFT position 10
+ADD_RES3_SNK_OPR : port output side RIGHT position 10
+
+ADD_RES3_SRC_TAG : position  (215,360)
+ADD_RES3_SRC_TAG : PARAM cur_state MODE ENT_ICON POSITION (0,0)
+ADD_RES3_SRC_TAG : port input side LEFT position 10
+
+ADD_RES3_SRC_OPR : position  (245,360)
+ADD_RES3_SRC_OPR : PARAM Register MODE VALUE POSITION (10,2)
+ADD_RES3_SRC_OPR : port input side LEFT position 10
+ADD_RES3_SRC_OPR : port output side RIGHT position 10
+
+ADD_RES3_CONTROL : position  (330,360)
+ADD_RES3_CONTROL : PARAM FUNC MODE VALUE POSITION (10,2)
+ADD_RES3_CONTROL : port input side RIGHT position 10
+ADD_RES3_CONTROL : port output side LEFT position 10
+
+MUL_RES1_SNK_TAG : position  (415,320)
+MUL_RES1_SNK_TAG : PARAM cur_state MODE ENT_ICON POSITION (0,0)
+MUL_RES1_SNK_TAG : port input side LEFT position 10
+
+MUL_RES1_SNK_OPR : position  (445,320)
+MUL_RES1_SNK_OPR : PARAM Register MODE VALUE POSITION (10,2)
+MUL_RES1_SNK_OPR : port input side LEFT position 10
+MUL_RES1_SNK_OPR : port output side RIGHT position 10
+
+MUL_RES1_SRC_TAG : position  (520,320)
+MUL_RES1_SRC_TAG : PARAM cur_state MODE ENT_ICON POSITION (0,0)
+MUL_RES1_SRC_TAG : port input side LEFT position 10
+
+MUL_RES1_SRC_OPR : position  (550,320)
+MUL_RES1_SRC_OPR : PARAM Register MODE VALUE POSITION (10,2)
+MUL_RES1_SRC_OPR : port input side LEFT position 10
+MUL_RES1_SRC_OPR : port output side RIGHT position 10
+
+MUL_RES1_CONTROL : position  (635,320)
+MUL_RES1_CONTROL : PARAM FUNC MODE VALUE POSITION (10,2)
+MUL_RES1_CONTROL : port input side RIGHT position 10
+MUL_RES1_CONTROL : port output side LEFT position 10
+
+MUL_RES2_SNK_TAG : position  (415,340)
+MUL_RES2_SNK_TAG : PARAM cur_state MODE ENT_ICON POSITION (0,0)
+MUL_RES2_SNK_TAG : port input side LEFT position 10
+
+MUL_RES2_SNK_OPR : position  (445,340)
+MUL_RES2_SNK_OPR : PARAM Register MODE VALUE POSITION (10,2)
+MUL_RES2_SNK_OPR : port input side LEFT position 10
+MUL_RES2_SNK_OPR : port output side RIGHT position 10
+
+MUL_RES2_SRC_TAG : position  (520,340)
+MUL_RES2_SRC_TAG : PARAM cur_state MODE ENT_ICON POSITION (0,0)
+MUL_RES2_SRC_TAG : port input side LEFT position 10
+
+MUL_RES2_SRC_OPR : position  (550,340)
+MUL_RES2_SRC_OPR : PARAM Register MODE VALUE POSITION (10,2)
+MUL_RES2_SRC_OPR : port input side LEFT position 10
+MUL_RES2_SRC_OPR : port output side RIGHT position 10
+
+MUL_RES2_CONTROL : position  (635,340)
+MUL_RES2_CONTROL : PARAM FUNC MODE VALUE POSITION (10,2)
+MUL_RES2_CONTROL : port input side RIGHT position 10
+MUL_RES2_CONTROL : port output side LEFT position 10
+
+ADD_RES : position (10,320)
+MUL_RES : position (405,375)
+
+ADD : position (185,410)
+ADD : STATES ADD_VOID:add ADD_BUSY:add_busy ADD_HELD:add_held
+ADD : port from_add_res1_snk side TOP position 21 ICON portd
+ADD : port from_add_res2_snk side TOP position 21 ICON portd
+ADD : port from_add_res3_snk side TOP position 21 ICON portd
+ADD : port from_add_res1_src side TOP position 126 ICON portd
+ADD : port from_add_res2_src side TOP position 126 ICON portd
+ADD : port from_add_res3_src side TOP position 126 ICON portd
+ADD : port from_add_res1_rsc side TOP position 140 ICON portd
+ADD : port from_add_res2_rsc side TOP position 140 ICON portd
+ADD : port from_add_res3_rsc side TOP position 140 ICON portd
+ADD : port to_cdb side BOTTOM position 80
+
+MUL : position (490,410)
+MUL : STATES MUL_VOID:mul MUL_BUSY:mul_busy MUL_HELD:mul_held
+MUL : port from_mul_res1_snk side TOP position 21 ICON portd
+MUL : port from_mul_res2_snk side TOP position 21 ICON portd
+MUL : port from_mul_res1_src side TOP position 126 ICON portd
+MUL : port from_mul_res2_src side TOP position 126 ICON portd
+MUL : port from_mul_res1_rsc side TOP position 140 ICON portd
+MUL : port from_mul_res2_rsc side TOP position 140 ICON portd
+MUL : port to_cdb side BOTTOM position 80
+
+CLOCK : position (20,440)
+CPHASE : position (20,440)
+CPHASE : STATES S:ClockS P0:ClockP0 P1:ClockP1
+CPHASE : PARAM cycle MODE VALUE POSITION (72,34)
+
+TOPLEVEL : LINKCORNER SDB_REG1_OPR output SOURCE from_sdb1 1 (0,-225)
+TOPLEVEL : LINKCORNER SDB_REG2_OPR output SOURCE from_sdb2 1 (0,-205)
+TOPLEVEL : LINKCORNER SDB_REG3_OPR output SOURCE from_sdb3 1 (0,-185)
+

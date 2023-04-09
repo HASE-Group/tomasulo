@@ -1,0 +1,228 @@
+// Project:	Tomasulo's Algorithm
+// Entity	Adder Reservation Station
+// File		add_res.hase
+// Date:	5 April 2001
+
+
+// The Adder Reservation Station monitors the state of the 9 individual
+// Reservation Station Control and Operand registers.
+// The CDB sends the RS register number to the RS when it passes a function
+// a Control Register.
+// When all three fields are full, the RS tells the registers to send
+// their contents to the Adder Unit. Only one RS can become full in any
+// one clock period.
+
+// The Adder Reservation Station registers are numbered to match their
+// Tag Register numbers:
+
+// tag_reg[4]  = add reservation station 1 sink
+// tag_reg[5]  = add reservation station 1 source
+// tag_reg[6]  = add reservation station 2 sink
+// tag_reg[7]  = add reservation station 2 source
+// tag_reg[8]  = add reservation station 3 sink
+// tag_reg[9]  = add reservation station 3 source
+
+$class_includes
+  class rs_opr;
+  class rsc;
+$class_decls
+
+  sim_entity_id bus;
+
+  rs_opr * my_res1_snk;
+  rs_opr * my_res1_src;
+  rsc  * my_res1_con;
+  rs_opr * my_res2_snk;
+  rs_opr * my_res2_src;
+  rsc  * my_res2_con;
+  rs_opr * my_res3_snk;
+  rs_opr * my_res3_src;
+  rsc  * my_res3_con;
+
+
+//structures and variables
+
+  int res1_snk_full;		// reg_no = cdb.cpr_reg_no = 4
+  int res1_src_full;		// reg_no = cdb.cpr_reg_no = 5
+  int res1_con_full;		// reg_no = cdb.con_reg_no + 20 = 20
+  int res2_snk_full;		// reg_no = cdb.cpr_reg_no = 6
+  int res2_src_full;		// reg_no = cdb.cpr_reg_no = 7
+  int res2_con_full;		// reg_no = cdb.con_reg_no + 20 = 21
+  int res3_snk_full;		// reg_no = cdb.cpr_reg_no = 8
+  int res3_src_full;		// reg_no = cdb.cpr_reg_no = 9
+  int res3_con_full;		// reg_no = cdb.con_reg_no + 20 = 22
+
+
+  int rs1_ready;
+  int rs2_ready;
+  int rs3_ready;
+  int send_to_rs1;
+  int send_to_rs2;
+  int send_to_rs3;
+
+// classes
+
+  void SetFull(int reg_no);
+
+$class_defs
+
+void add_res::SetFull(int reg_no)	// invoked by CDB in clockPhase 1
+{
+	switch (reg_no)
+	 {
+	  case 4:
+	  res1_snk_full = 1;
+	  break;
+	  case 5:
+	  res1_src_full = 1;
+	  break;
+	  case 20:
+	  res1_con_full = 1;
+	  break;
+	  case 6:
+	  res2_snk_full = 1;
+	  break;
+	  case 7:
+	  res2_src_full = 1;
+	  break;
+	  case 21:
+	  res2_con_full = 1;
+	  break;
+	  case 8:
+	  res3_snk_full = 1;
+	  break;
+	  case 9:
+	  res3_src_full = 1;
+	  break;
+	  case 22:
+	  res3_con_full = 1;
+	  break;
+	 }
+}
+
+$pre
+  bus = sim.get_entity_id("CDB");
+
+  my_res1_snk = (rs_opr*)sim.get_entity(sim.get_entity_id("ADD_RES1_SNK_OPR"));
+  my_res1_src = (rs_opr*)sim.get_entity(sim.get_entity_id("ADD_RES1_SRC_OPR"));
+  my_res1_con = (rsc*)sim.get_entity(sim.get_entity_id("ADD_RES1_CONTROL"));
+  my_res2_snk = (rs_opr*)sim.get_entity(sim.get_entity_id("ADD_RES2_SNK_OPR"));
+  my_res2_src = (rs_opr*)sim.get_entity(sim.get_entity_id("ADD_RES2_SRC_OPR"));
+  my_res2_con = (rsc*)sim.get_entity(sim.get_entity_id("ADD_RES2_CONTROL"));
+  my_res3_snk = (rs_opr*)sim.get_entity(sim.get_entity_id("ADD_RES3_SNK_OPR"));
+  my_res3_src = (rs_opr*)sim.get_entity(sim.get_entity_id("ADD_RES3_SRC_OPR"));
+  my_res3_con = (rsc*)sim.get_entity(sim.get_entity_id("ADD_RES3_CONTROL"));
+
+  rs1_ready = 0;
+  rs2_ready = 0;
+  rs3_ready = 0;
+  send_to_rs1 = 0;
+  send_to_rs2 = 0;
+  send_to_rs3 = 0;
+
+  res1_snk_full = 0;
+  res1_src_full = 0;
+  res1_con_full = 0;
+  res2_snk_full = 0;
+  res2_src_full = 0;
+  res2_con_full = 0;
+  res3_snk_full = 0;
+  res3_src_full = 0;
+  res3_con_full = 0;
+
+$phase0
+// predicates for use in sim_waiting test
+  sim_from_p set_full(bus);	    
+
+    sim_hold(5);	// allow time for CDB Phase 0 send
+
+// If a reservation station has its function and both its operand registers
+// full, set Reservation Station Ready and send Control and Operand Registers
+// their Tag number. On receipt they will send their operands to the adder.
+// The Control Register will also send its Tag number to the adder. This
+// will be used later as the Arithmetic Unit output tag.
+
+    if ((res1_snk_full == 1) && (res1_src_full == 1) && (res1_con_full == 1))
+
+	{rs1_ready = 1;
+	}
+
+    if ((res2_snk_full == 1) && (res2_src_full == 1) && (res2_con_full == 1))
+
+	{rs2_ready = 1;
+	}
+
+    if ((res3_snk_full == 1) && (res3_src_full == 1) && (res3_con_full == 1))
+
+	{rs3_ready = 1;
+	}
+
+// If more than one is ready, 
+
+    if (rs1_ready == 1)
+	{
+	my_res1_snk->Output_to_au();
+	my_res1_src->Output_to_au();
+	my_res1_con->Output_to_au();
+	send_to_rs1 = 1;
+	}
+
+    if ((rs1_ready == 0) && (rs2_ready == 1))
+	{
+	my_res2_snk->Output_to_au();
+	my_res2_src->Output_to_au();
+	my_res2_con->Output_to_au();
+	send_to_rs2 = 1;
+	}
+
+    if ((rs1_ready  == 0) && (rs2_ready == 0) && (rs3_ready == 1))
+	{
+	my_res3_snk->Output_to_au();
+	my_res3_src->Output_to_au();
+	my_res3_con->Output_to_au();
+	send_to_rs3 = 1;
+	}
+
+$phase1
+
+// If Reservation Station Ready, clear Reservation Station Ready and reset
+// register full bits. The Registers clear themselves when they send their
+// contents to the Adder.
+// The Reservation Station Busy bit in the Decoder cannot be reset until
+// the result has been stored because the tag cannot be reused until then.
+
+	 if (send_to_rs1 == 1)
+	    {
+	     res1_snk_full = 0;
+	     res1_src_full = 0;
+	     res1_con_full = 0;
+	     rs1_ready = 0;
+	     send_to_rs1 = 0;
+	    }
+
+	 if (send_to_rs2 == 1)
+	    {
+	     res2_snk_full = 0;
+	     res2_src_full = 0;
+	     res2_con_full = 0;
+	     rs2_ready = 0;
+	     send_to_rs2 = 0;
+	    }
+
+	 if (send_to_rs3 == 1)
+	    {
+	     res3_snk_full = 0;
+	     res3_src_full = 0;
+	     res3_con_full = 0;
+	     rs3_ready = 0;
+	     send_to_rs3 = 0;
+	    }
+
+
+
+
+
+
+
+
+

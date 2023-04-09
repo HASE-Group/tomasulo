@@ -1,0 +1,76 @@
+// Project:	Tomasulo's Algorithm
+// Entity	Store Data Buffer
+// File		fp_reg.hase
+// Date:	20 June 2001
+
+// A separate Operand Register entity is used for each Store Data Buffer
+// in (in order that they can be separately coloured during animation).
+// Each contains a register which is loaded by the Common Data Bus.
+// The input packet contains a register number field and an operand field.
+
+// Store Data Buffers receive direct inputs from the CDB via the
+// input port 
+
+// The register content is sent to the Source unit after a time delay
+
+// Packets from the CDB contain a register number and an operand. The
+// operand is copied into the operand register.
+
+$class_decls
+
+//structures and variables
+  int RS_no;
+  int Operand;
+  int output_opr;
+
+$class_defs
+
+$pre
+
+  output_opr = 0;
+
+  SDB_Register = 0;
+  my_state = SDB_REG;
+  dump_state();
+
+$phase0
+// predicates
+  sim_from_port receive(input);
+
+     if (output_opr == 1)	//reset value and flags from previous cycle
+      {
+       SDB_Register = 0;
+       my_state = SDB_REG;
+       dump_state();
+       output_opr = 0;
+      }
+
+	sim_hold(5);	// give CDB chance to send new value in CP0
+			// If there is a receive event from the CDB, 
+			// copy operand data field into register data field. 
+	if (sim_waiting(ev, receive) > 0)
+	 {
+	  SIM_CAST(int, Operand, ev);
+	  SDB_Register = Operand;
+	  my_state = SDB_REG_BUSY;
+	  output_opr = 1;
+	  dump_state();
+	 }
+
+$phase1
+
+// if output_opr is set, send content to Source
+if (output_opr == 1) 
+  {
+    send_VALUE(output, SDB_Register);
+  }
+
+
+
+
+
+
+
+
+
+

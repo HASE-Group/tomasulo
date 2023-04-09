@@ -1,0 +1,233 @@
+
+// Project:	Tomasulo's Algorithm
+// Entity	Add Unit
+// File		add.hase
+// Date:	3 May 2001
+
+
+// The Add Unit executes instructions ADD and SUB,
+
+// It receives instruction and operand packets from the RS
+// registers and sends an operand result packet to the Common Data Bus.
+// The number of clock periods (latency values) required to execute an
+// instruction is a parameter 
+
+// The Unit is implemented as an 8-stage pipeline, and can accept
+// another instruction in each clock period.
+// It computes its result in the first stage
+// and simply copies it through the remaining stages. The result is 
+// taken from the stage corresponding to the latency and sent
+// to the CDB.
+
+$class_includes
+ class decoder;
+ class control_box;
+
+$class_decls
+
+//entity references
+  decoder * myDecoder;
+
+//structures and variables
+
+  t_rs_control Instruction;
+  t_au_struct InputPacket, Pipeline[8];
+  t_au_output Output;
+
+  int Snk_Operand, Src_Operand;
+
+  //int latency;
+  int valid_instrn;
+  int Any;		// Unit is active if Any pipeline stage is valid
+
+  int CDB_P0_Held;
+  int CDB_P1_Held;
+  int CDB_Hold_P1;
+  int old_state;
+
+  char Destination[8], Source[8];
+  t_au_result result;
+
+//classes
+  t_au_result Result();
+  void Clear_CDB_Hold();
+
+$class_defs
+
+t_au_result add::Result()
+// computes result of instruction/operands in first pipeline stage
+{
+	  if (Instruction.instrn.function == t_cdb_instrn_set::ADD)
+		{
+		result.status = 0;
+		result.data = Snk_Operand + Src_Operand;
+		}
+
+	  else if (Instruction.instrn.function == t_cdb_instrn_set::SUB)
+		{
+		result.status = 0;
+		result.data = Snk_Operand - Src_Operand;
+		}
+
+	return result;
+}
+
+void add::Clear_CDB_Hold()
+{
+	CDB_Hold_P1 = 0;
+}
+
+$pre
+
+  myDecoder = (decoder*)sim.get_entity(sim.get_entity_id("DECODER"));
+
+   valid_instrn = 0;
+   Any = 0;		// Unit is active if Any pipeline stage is valid
+
+  CDB_P0_Held = 0;
+  CDB_P1_Held = 0;
+  CDB_Hold_P1 = 0;
+  my_state = ADD_VOID;
+  old_state = ADD_VOID;
+  dump_state();
+
+// initialise pipeline 
+
+	for (int j=0; j < 8; j++)
+	{
+	Pipeline[j].status = 0;
+	Pipeline[j].instrn.reset();
+	}
+
+$phase0
+
+     CDB_P0_Held = CDB_P1_Held;
+     if (CDB_P0_Held == 1)
+    {
+	  if (my_state == ADD_BUSY)
+	  {my_state = ADD_HELD;} // i.e. pipeline busy but stalled
+	  if (my_state != old_state)
+	  {dump_state();
+	   old_state = my_state;}
+    }
+
+   else	// Hold = 0
+
+// If Hold is set, packets may have been sent  << ALTER?
+// but no more packets will be sent
+
+   {
+	valid_instrn = 0;
+
+  if (sim_waiting(SIM_ANY) > 0)
+  {
+	// if there's one packet, there will be three, not in guaranteed order
+   for (int j=0; j<3; j++)
+    {
+     sim_get_next(ev);
+     if ((ev.from_port(from_add_res1_rsc))
+      || (ev.from_port(from_add_res2_rsc))
+      || (ev.from_port(from_add_res3_rsc)))	// Instruction packet
+	{
+	 SIM_CAST (t_rs_control, Instruction, ev);
+	}
+     else if ((ev.from_port(from_add_res1_snk))
+           || (ev.from_port(from_add_res2_snk))
+           || (ev.from_port(from_add_res3_snk)))
+	{
+	 SIM_CAST (int, Snk_Operand, ev);	// Sink operand packet
+	}
+     else 				// Must be Source operand packet
+	{
+	 SIM_CAST (int, Src_Operand, ev);
+	}
+	valid_instrn = 1;
+    }	// closes for loop
+  }	//closes sim_waiting(SIM_ANY)
+//   if (latency < 1)
+//	{
+//	 stopSimulation(-40);	// invalid latency value
+//	}
+//   else 	// latency > 0
+//	{ comment
+
+// PROGRESS PIPELINE
+
+// move instruction/operand packets through pipeline registers
+// NB in hardware the Pipeline registers would be copied simultaneously
+// In the simulation they are dealt with serially, so need to start
+// at the output end
+
+	Any = 0;
+	for (int i= (latency-1); i>=1; i--)
+	 {
+	 Pipeline[i].status = Pipeline[i-1].status;
+		if ((Pipeline[i].status & 1) == 1)
+		{Any = 1;}
+	 Pipeline[i].instrn = Pipeline[i-1].instrn;
+	 Pipeline[i].data1 = Pipeline[i-1].data1;
+	 Pipeline[i].data2 = Pipeline[i-1].data2;
+	 }
+
+// DEAL WITH INPUT
+// If Stage 0 contains a valid instruction, compute Result and
+// copy into first Pipeline stage output register (Pipeline[0])
+
+	if (valid_instrn == 1)
+	  {Any = 1;
+	   Pipeline[0].status = 1 | (Instruction.tag_no << 16) | Result().status;
+	   Pipeline[0].instrn = Instruction.instrn;
+	   Pipeline[0].data1  = Result().data;
+	   Pipeline[0].data2  = Src_Operand;
+	  }
+         else
+	  {Pipeline[0].data1 = 0;
+	   Pipeline[0].status = 0;}
+
+// set void/active state in display
+	if (Any == 1)
+	  {my_state = ADD_BUSY;} // i.e. valid instruction received
+	else
+	  {my_state = ADD_VOID;} // i.e. non-valid instruction received
+
+//	}	// closes latency  > 0
+   }		// closes Hold = 0
+
+//update state display
+
+	 if (my_state != old_state)
+	  {dump_state();
+	   old_state = my_state;}
+
+$phase1
+
+	CDB_P1_Held = CDB_Hold_P1;
+	// If not held up, send output to CDB
+
+	if (CDB_P1_Held == 0)
+	 {
+
+// Send result in last pipeline stage to CDB and send Tag as an early
+// warning to the Decoder (in case it's about to access the Tagged value)
+
+	 if ((Pipeline[latency-1].status & 1) == 1)
+	  {
+	   Output.operand = Pipeline[latency-1].data1;
+	   Output.tag_no = Pipeline[latency-1].status >> 16;
+	switch (Output.tag_no)
+	 {
+	 case 7:
+	   send_AU1_OUTPUT( to_cdb, Output, 0, 17, 2 );
+	   break;
+	 case 8:
+	   send_AU2_OUTPUT( to_cdb, Output, 0, 17, 2 );
+	   break;
+	 case 9:
+	   send_AU3_OUTPUT( to_cdb, Output, 0, 17, 2 );
+	   break;
+	 }
+	   myDecoder->Add_Tag(Output.tag_no);	// advance warning of new tag
+	   CDB_Hold_P1 = 1;  // CDB resets Hold when it has dealt with packet
+	  }
+	}	// ends if (CDB_P1_Held == 0)
+

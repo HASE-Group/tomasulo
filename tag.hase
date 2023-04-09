@@ -1,0 +1,108 @@
+// Project:	Tomasulo's Algorithm
+// Entity	Reservation Station Tag Register
+// File		tag.hase
+// Date:	29 March 2001
+
+// The tag registers are used purely for display purposes. Whenever
+// they receive an update packet from the CDB, they extract the tag number
+// and display the appropriate tag icon.
+// If the new tag is the same as the existing tag, the current state is
+// set to tag0. This is so that users can see AU output tags going to
+// their correct destination.
+// The table of tag register contents is kept in the Common Data Bus.
+
+$class_decls
+
+//entity references
+  sim_entity_id decode;
+
+  int Tag;
+  int new_tag;
+  int old_state;
+
+$body
+
+  decode = sim.get_entity_id("DECODER");
+
+  new_tag = 0;
+  old_state = 0;
+
+
+  cur_state = TAG_0;
+  dump_state();
+
+// predicates
+
+  sim_from_port cdb_tag(input);
+  sim_from_p dec_tag(decode);
+
+while(1)
+ {
+  sim_wait_for(SIM_ANY, ev);
+  sim_putback(ev);
+  if (sim_waiting(ev, cdb_tag) > 0)
+   {
+    sim_hold(5);
+    new_tag = 1;
+   }
+  if (sim_waiting(ev, dec_tag) > 0)
+   {
+    sim_hold(5);
+    new_tag = 1;
+   }
+  if (new_tag == 1)
+   {
+    SIM_CAST(int, Tag, ev);
+    if (Tag == old_state)
+     {
+      cur_state = TAG_0;
+     }
+    else
+     {
+       switch (Tag)
+        {
+	  case 0:
+	   cur_state = TAG_0;
+	   break;
+	  case 1:
+	   cur_state = TAG_1;
+	   break;
+	  case 2:
+	   cur_state = TAG_2;
+	   break;
+	  case 3:
+	   cur_state = TAG_3;
+	   break;
+	  case 4:
+	   cur_state = TAG_4;
+	   break;
+	  case 5:
+	   cur_state = TAG_5;
+	   break;
+	  case 6:
+	   cur_state = TAG_6;
+	   break;
+	  case 7:
+	   cur_state = TAG_7;
+	   break;
+	  case 8:
+	   cur_state = TAG_8;
+	   break;
+	  case 9:
+	   cur_state = TAG_9;
+	   break;
+	  case 10:
+	   cur_state = TAG_10;
+	   break;
+	  case 11:
+	   cur_state = TAG_11;
+	   break;
+        }
+     }
+    dump_state();
+    old_state = Tag;
+    new_tag = 0;
+   }	// end of new_tag
+ }	// end of while loop
+
+

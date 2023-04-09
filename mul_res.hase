@@ -1,0 +1,207 @@
+// Project:	Tomasulo's Algorithm
+// Entity	Multiply Reservation Station
+// File		mul_res.hase
+// Date:	28 May 2001
+
+
+// The Multiply Reservation Station monitors the state of the 6 individual
+// Reservation Station Control and Operand registers.
+// The CDB sends the RS register number to the RS when it passes a function
+// to a Control Register.
+// When all three fields are full, and the Multiply Unit is ready,
+// the RS tells the registers to send their contents to the Multiply Unit.
+// Only one RS can become full in any one clock period.
+
+// The Multiply Reservation Station registers are numbered to match their
+// Tag Register numbers:
+
+// tag_reg[10]  = mul reservation station 1 sink
+// tag_reg[11]  = mul reservation station 1 source
+// tag_reg[12]  = mul reservation station 2 sink
+// tag_reg[13]  = mul reservation station 2 source
+
+$class_includes
+  class cdb;
+  class decoder;
+  class rs_opr;
+  class rsc;
+$class_decls
+
+//entity references
+  sim_entity_id bus;
+
+  cdb * myCDB;
+  decoder * myDDR;
+  rs_opr * my_res1_snk;
+  rs_opr * my_res1_src;
+  rsc  * my_res1_con;
+  rs_opr * my_res2_snk;
+  rs_opr * my_res2_src;
+  rsc  * my_res2_con;
+
+//structures and variables
+
+  int res1_snk_full;		// reg_no = cdb.opr_reg_no = 10
+  int res1_src_full;		// reg_no = cdb.opr_reg_no = 11
+  int res1_con_full;		// reg_no = cdb.con_reg_no + 20 = 23
+  int res2_snk_full;		// reg_no = cdb.opr_reg_no = 12
+  int res2_src_full;		// reg_no = cdb.opr_reg_no = 13
+  int res2_con_full;		// reg_no = cdb.con_reg_no + 20 = 24
+
+  int mul_busy;
+  int Tag_no;
+  int reg_no;
+
+  int rs1_ready;
+  int rs2_ready;
+  int send_to_rs1;
+  int send_to_rs2;
+
+// classes
+
+  void SetFull(int reg_no);
+  void SetReady();
+
+$class_defs
+
+void mul_res::SetFull(int reg_no)	// invoked by CDB in clockPhase 1
+{
+	switch (reg_no)
+	 {
+	  case 10:
+	  res1_snk_full = 1;
+	  break;
+	  case 11:
+	  res1_src_full = 1;
+	  break;
+	  case 23:
+	  res1_con_full = 1;
+	  break;
+	  case 12:
+	  res2_snk_full = 1;
+	  break;
+	  case 13:
+	  res2_src_full = 1;
+	  break;
+	  case 24:
+	  res2_con_full = 1;
+	  break;
+	 }
+}
+
+void mul_res::SetReady()
+{
+	mul_busy = 0;
+}
+
+$pre
+
+  bus =  sim.get_entity_id("CDB");
+  myCDB = (cdb*)sim.get_entity(bus); 
+  myDDR = (decoder*)sim.get_entity(sim.get_entity_id("DECODER")); 
+
+  my_res1_snk = (rs_opr*)sim.get_entity(sim.get_entity_id("MUL_RES1_SNK_OPR"));
+  my_res1_src = (rs_opr*)sim.get_entity(sim.get_entity_id("MUL_RES1_SRC_OPR"));
+  my_res1_con = (rsc*)sim.get_entity(sim.get_entity_id("MUL_RES1_CONTROL"));
+  my_res2_snk = (rs_opr*)sim.get_entity(sim.get_entity_id("MUL_RES2_SNK_OPR"));
+  my_res2_src = (rs_opr*)sim.get_entity(sim.get_entity_id("MUL_RES2_SRC_OPR"));
+  my_res2_con = (rsc*)sim.get_entity(sim.get_entity_id("MUL_RES2_CONTROL"));
+
+  rs1_ready = 0;
+  rs2_ready = 0;
+  send_to_rs1 = 0;
+  send_to_rs2 = 0;
+
+  res1_snk_full = 0;
+  res1_src_full = 0;
+  res1_con_full = 0;
+  res2_snk_full = 0;
+  res2_src_full = 0;
+  res2_con_full = 0;
+  mul_busy = 0;
+
+$phase0
+
+// predicates for use in sim_waiting test
+  sim_from_p set_full(bus);	    
+
+    sim_hold(5);	// allow time for CDB Phase 0 send
+
+// If a reservation station has its function and both its operand registers
+// full, set Reservation Station Ready invoke send classes in Control and
+// Operand Registers.
+// The Control Register will also send its Tag number to the multiplier. This
+// will be used later as the Arithmetic Unit output tag.
+
+
+  if (mul_busy == 0)
+   {
+    if ((res1_snk_full == 1) && (res1_src_full == 1) && (res1_con_full == 1))
+	{rs1_ready = 1;
+	my_res1_snk->Output_to_au();
+	my_res1_src->Output_to_au();
+	my_res1_con->Output_to_au();
+	mul_busy = 1;
+	}
+
+    if ((res2_snk_full == 1) && (res2_src_full == 1) && (res2_con_full == 1))
+
+	{rs2_ready = 1;
+	my_res2_snk->Output_to_au();
+	my_res2_src->Output_to_au();
+	my_res2_con->Output_to_au();
+	mul_busy = 1;
+	}
+   }
+
+// If more than one is ready, 
+
+    if (rs1_ready == 1)
+	{
+	my_res1_snk->Output_to_au();
+	my_res1_src->Output_to_au();
+	my_res1_con->Output_to_au();
+	send_to_rs1 = 1;
+	}
+
+    if ((rs1_ready == 0) && (rs2_ready == 1))
+	{
+	my_res2_snk->Output_to_au();
+	my_res2_src->Output_to_au();
+	my_res2_con->Output_to_au();
+	send_to_rs2 = 1;
+	}
+
+$phase1
+
+// If Reservation Station Ready, clear Reservation Station Ready and reset
+// register full bits. The Registers clear themselves when they send their
+// contents to the Multiplier.
+// The Reservation Station Busy bit in the Decoder cannot be reset until
+// the result has been stored because the tag cannot be reused until then.
+
+	  if (send_to_rs1 == 1)
+	    {
+	     res1_snk_full = 0;
+	     res1_src_full = 0;
+	     res1_con_full = 0;
+	     rs1_ready = 0;
+	     send_to_rs1 = 0;
+	    }
+
+	  if (send_to_rs2 == 1)
+	    {
+	     res2_snk_full = 0;
+	     res2_src_full = 0;
+	     res2_con_full = 0;
+	     rs2_ready = 0;
+	     send_to_rs2 = 0;
+	    }
+
+
+
+
+
+
+
+

@@ -1,0 +1,450 @@
+
+// Project:	Tomalsulo's Algorithm
+// Entity	Instruction/Data Source
+// File:	source.hase
+// Date:	24 May 2001
+
+// The Source Unit contains two RARRAYs: instr_mem and data_mem.
+// These are separate because instructions are held in readable (string)
+// form for visualisation purposes.
+// In each ClockPhase 1 it sends a new instruction to the FLOS, starting at
+// instruction 0, unless it is held up by an interlock with the FLOS.
+// If the instruction is an RLD (RLD FPR FPB mem_addr) it outputs and LD
+// instruction (LD FPR FPB) and accesses the data memory using mem_addr.
+// This data is copied into stage 0 of an n-stage (n normally = 8) pipeline,
+// together with the FLB number. The output from this pipeline is sent to the
+// appropriate FLB. For any other instruction the FLB number is set to 0.
+
+$class_includes
+
+$class_decls
+
+//entity references
+
+  sim_entity_id flost;
+  sim_entity_id flb_reg[6];
+
+//structures and variables
+
+  t_cdb_instrn_set InstrBuffer, OutputInstrBuffer;
+  t_operand_reg DataOutputBuffer[16];
+  data_mem_word sdb_opr;
+
+  bool data_address_error, instr_address_error, function_error, time_out;
+  int Mem_Output_Data;
+  int flb_reg_no;
+  int SDB_Operand;
+  int sdb_reg_no, sdb_table[4];
+  int P0_Held;
+  int P1_Held;
+  int Hold_P1;
+  int flb_in_use;	// if the number of FLBs in use is >= 6
+  int flb_wait;		// wait until there are fewer in use
+  int flb_no;
+  int sdb_no;
+  int sdb_input;
+  int sdb_in_use[4];
+  int sdb_wait;	// if the number of SDBs in use is >= 3
+			// wait until there are fewer in use
+
+  int operand;
+  int AnyI;
+  int AnyD;
+  int i_address;
+  int d_address;
+  int stop_P0;
+  int stop_P1;
+  int send_instr;
+
+// classes
+
+  void Clear_Hold();
+  void FLB_Freed();
+
+$class_defs
+
+void source::Clear_Hold() {Hold_P1 = 0;}	// invoked by FLOS
+
+void source::FLB_Freed()  {flb_in_use --;}	// invoked by FLB
+
+
+$pre
+
+  flb_reg[0] = sim.get_entity_id("FL_PT_BUF1");
+  flb_reg[1] = sim.get_entity_id("FL_PT_BUF2");
+  flb_reg[2] = sim.get_entity_id("FL_PT_BUF3");
+  flb_reg[3] = sim.get_entity_id("FL_PT_BUF4");
+  flb_reg[4] = sim.get_entity_id("FL_PT_BUF5");
+  flb_reg[5] = sim.get_entity_id("FL_PT_BUF6");
+
+   sdb_in_use[1] = 0;
+   sdb_in_use[2] = 0;
+   sdb_in_use[3] = 0;
+   sdb_wait = 0;	// if the number of SDBs in use is >= 3
+			// wait until there are fewer in use
+
+  data_address_error = false;
+  instr_address_error = false;
+  function_error = false;
+  time_out = false;
+  AnyI = 0;
+  AnyD = 0;
+  i_address = 0;
+  d_address = 0;
+  stop_P0 = 0;
+  stop_P1 = 0;
+  send_instr = 0;
+  flb_no = 1;
+
+  Hold_P1 = 0;
+  P0_Held = 0;
+  P1_Held = 0;
+  flb_in_use = 0;
+  flb_wait = 0;
+
+$phase0
+
+// predicates for use in sim_wait tests
+  sim_from_port sdb1_operand(from_sdb1);
+  sim_from_port sdb2_operand(from_sdb2);
+  sim_from_port sdb3_operand(from_sdb3);
+
+  Max_Time_Left --;
+  dump_state();
+   if (Max_Time_Left <= 0) 
+	{time_out = true;
+	 stopSimulation(0);}
+
+// check for packet from and SDB
+    if (sim_waiting(ev, sdb1_operand) > 0)
+     {
+      sdb_input = 1;
+      sdb_reg_no = 1;
+      sdb_in_use[1] = 0;
+     }
+    else if (sim_waiting(ev, sdb2_operand) > 0)
+     {
+      sdb_input = 1;
+      sdb_reg_no = 2;
+      sdb_in_use[2] = 0;
+     }
+    else if (sim_waiting(ev, sdb3_operand) > 0)
+     {
+      sdb_input = 1;
+      sdb_reg_no = 3;
+      sdb_in_use[3] = 0;
+     }
+// deal with packet from SDB
+   if (sdb_input == 1)
+    {
+     SIM_CAST(int, SDB_Operand, ev);
+     sdb_opr.data = SDB_Operand;
+// look up stored memory addres in sdb_table
+     d_address = sdb_table[sdb_reg_no];
+     data_mem.Update(d_address, sdb_opr);
+     sdb_input = 0;
+    }
+
+// check if all SDB table entries are free
+     if ((sdb_in_use[1] == 1) && (sdb_in_use[2] == 1) && (sdb_in_use[3] == 1))
+      {sdb_wait = 1;}
+     else
+      {sdb_wait = 0;}
+
+// check if number of FLBs in use is < 6
+     if (flb_in_use < 6)
+      {flb_wait = 0;}
+     else
+      {flb_wait = 1;}
+
+    P0_Held = P1_Held;
+    if (P0_Held == 0)
+	{
+	 for (int j=(d_accesstime - 1); j>=1; j--)	//Progress data pipeline
+	  {
+	   DataOutputBuffer[j].reg_no = DataOutputBuffer[j-1].reg_no;
+	   DataOutputBuffer[j].operand = DataOutputBuffer[j-1].operand;
+	  }
+
+  if (stop_P0 == 0)
+   {
+    if ((i_address < 0) || (i_address >= I_Mem_Size))
+      {
+       OutputInstrBuffer.reset();
+	instr_address_error = true;
+	stopSimulation(0); // Invalid instruction memory address
+      }
+    else	// valid instruction address
+     {
+      InstrBuffer = instr_mem[i_address];
+      DataOutputBuffer[0].reg_no = 0;  // a LOAD function will set a /= 0 value
+      if (is_a_function(InstrBuffer) == 0)
+       {
+        OutputInstrBuffer.reset();
+	function_error = true;
+        stopSimulation(0);	// unimplemented function
+       }
+
+      if (InstrBuffer.function == t_cdb_instrn_set::LOAD)
+       {
+	if (flb_wait == 0)
+	 {
+          OutputInstrBuffer.function = t_cdb_instrn_set::LD;
+          strcpy(OutputInstrBuffer.rr_field.snk_reg,InstrBuffer.ld_field.snk_reg);
+	  sprintf(OutputInstrBuffer.rr_field.src_reg, "FLB%d", flb_no);
+	  d_address = InstrBuffer.ld_field.mem_addr;
+	  if ((d_address >= 0) && (d_address < D_Mem_Size))
+	   {
+	    DataOutputBuffer[0].operand = data_mem[d_address].data;
+	    DataOutputBuffer[0].reg_no = flb_no;
+	    flb_in_use ++;
+	    flb_no++;
+	    if (flb_no == 7)
+	     {flb_no = 1;}
+	  }
+	else
+	 {
+	  DataOutputBuffer[0].operand = 0;
+	  data_address_error = true;
+	  stopSimulation(0);	// Invalid data memory address
+	 }
+	}	// end of flb_wait
+       }	// end of LD
+
+      else if (InstrBuffer.function == t_cdb_instrn_set::STORE)
+       {
+	if (sdb_wait == 0)
+	 {
+	  d_address = InstrBuffer.st_field.mem_addr;
+	  if ((d_address >= 0) && (d_address < D_Mem_Size))
+	   {
+	    DataOutputBuffer[0].operand = 0;
+	    DataOutputBuffer[0].reg_no = 0; // 0 so that no data will be sent
+	    if (sdb_in_use[1] == 0)
+		{	     
+		 sdb_no = 1;
+		 sdb_in_use[1] = 1;
+		} 
+	    else if (sdb_in_use[2] == 0)
+		{	     
+		 sdb_no = 2;
+		 sdb_in_use[2] = 1;
+		} 
+
+	    else	// sdb_in_use[3] must = 0 to get here
+		{	     
+		 sdb_no = 3;
+		 sdb_in_use[3] = 1;
+		} 
+
+	     sdb_table[sdb_no] = d_address;	// store memory address
+						// in sdb_table
+          OutputInstrBuffer.function = t_cdb_instrn_set::ST;
+          strcpy(OutputInstrBuffer.rr_field.snk_reg,InstrBuffer.st_field.src_reg);
+	  sprintf(OutputInstrBuffer.rr_field.src_reg, "SDB%d", sdb_no);
+	    }
+	  else
+	   {
+	    DataOutputBuffer[0].operand = 0;
+	    data_address_error = true;
+
+	    stopSimulation(0);	// Invalid data memory address
+	   }
+	 }	// end of sdb_wait
+       }	// end of ST
+
+      else if (InstrBuffer.function == t_cdb_instrn_set::ADDRR)
+       {
+          OutputInstrBuffer.function = t_cdb_instrn_set::ADD;
+          strcpy(OutputInstrBuffer.rr_field.snk_reg, InstrBuffer.rr_field.snk_reg);
+          strcpy(OutputInstrBuffer.rr_field.src_reg, InstrBuffer.rr_field.src_reg);
+       }	// end of ADDRR
+
+      else if (InstrBuffer.function == t_cdb_instrn_set::SUBRR)
+       {
+          OutputInstrBuffer.function = t_cdb_instrn_set::SUB;
+          strcpy(OutputInstrBuffer.rr_field.snk_reg, InstrBuffer.rr_field.snk_reg);
+          strcpy(OutputInstrBuffer.rr_field.src_reg, InstrBuffer.rr_field.src_reg);
+       }	// end of ADDRR
+
+      else if (InstrBuffer.function == t_cdb_instrn_set::MULRR)
+       {
+          OutputInstrBuffer.function = t_cdb_instrn_set::MUL;
+          strcpy(OutputInstrBuffer.rr_field.snk_reg, InstrBuffer.rr_field.snk_reg);
+          strcpy(OutputInstrBuffer.rr_field.src_reg, InstrBuffer.rr_field.src_reg);
+       }	// end of ADDRR
+
+      else if (InstrBuffer.function == t_cdb_instrn_set::DIVRR)
+       {
+          OutputInstrBuffer.function = t_cdb_instrn_set::DIV;
+          strcpy(OutputInstrBuffer.rr_field.snk_reg, InstrBuffer.rr_field.snk_reg);
+          strcpy(OutputInstrBuffer.rr_field.src_reg, InstrBuffer.rr_field.src_reg);
+       }	// end of ADDRR
+
+      else if (InstrBuffer.function == t_cdb_instrn_set::ADDRS)
+       {
+	if (flb_wait == 0)
+	 {
+          OutputInstrBuffer.function = t_cdb_instrn_set::ADD;
+          strcpy(OutputInstrBuffer.rr_field.snk_reg, InstrBuffer.rs_field.snk_reg);
+	  sprintf(OutputInstrBuffer.rr_field.src_reg, "FLB%d", flb_no);
+	  d_address = InstrBuffer.rs_field.mem_addr;
+	  if ((d_address >= 0) && (d_address < D_Mem_Size))
+	   {
+	    DataOutputBuffer[0].operand = data_mem[d_address].data;
+	    DataOutputBuffer[0].reg_no = flb_no;
+	    flb_in_use ++;
+	    flb_no++;
+	    if (flb_no == 7)
+	     {flb_no = 1;}
+	  }
+	else
+	 {
+	  DataOutputBuffer[0].operand = 0;
+	  data_address_error = true;
+	  stopSimulation(0);	// Invalid data memory address
+	 }
+	}	// end of flb_wait
+       }	// end of ADDRS
+
+      else if (InstrBuffer.function == t_cdb_instrn_set::SUBRS)
+       {
+	if (flb_wait == 0)
+	 {
+          OutputInstrBuffer.function = t_cdb_instrn_set::SUB;
+          strcpy(OutputInstrBuffer.rr_field.snk_reg, InstrBuffer.rs_field.snk_reg);
+	  sprintf(OutputInstrBuffer.rr_field.src_reg, "FLB%d", flb_no);
+	  d_address = InstrBuffer.rs_field.mem_addr;
+	  if ((d_address >= 0) && (d_address < D_Mem_Size))
+	   {
+	    DataOutputBuffer[0].operand = data_mem[d_address].data;
+	    DataOutputBuffer[0].reg_no = flb_no;
+	    flb_in_use ++;
+	    flb_no++;
+	    if (flb_no == 7)
+	     {flb_no = 1;}
+	  }
+	else
+	 {
+	  DataOutputBuffer[0].operand = 0;
+	  data_address_error = true;
+	  stopSimulation(0);	// Invalid data memory address
+	 }
+	}	// end of flb_wait
+       }	// end of SUBRS
+
+      else if (InstrBuffer.function == t_cdb_instrn_set::MULRS)
+       {
+	if (flb_wait == 0)
+	 {
+          OutputInstrBuffer.function = t_cdb_instrn_set::MUL;
+          strcpy(OutputInstrBuffer.rr_field.snk_reg, InstrBuffer.rs_field.snk_reg);
+	  sprintf(OutputInstrBuffer.rr_field.src_reg, "FLB%d", flb_no);
+	  d_address = InstrBuffer.rs_field.mem_addr;
+	  if ((d_address >= 0) && (d_address < D_Mem_Size))
+	   {
+	    DataOutputBuffer[0].operand = data_mem[d_address].data;
+	    DataOutputBuffer[0].reg_no = flb_no;
+	    flb_in_use ++;
+	    flb_no++;
+	    if (flb_no == 7)
+	     {flb_no = 1;}
+	  }
+	else
+	 {
+	  DataOutputBuffer[0].operand = 0;
+	  data_address_error = true;
+	  stopSimulation(0);	// Invalid data memory address
+	 }
+	}	// end of flb_wait
+       }	// end of MULRS
+
+      else if (InstrBuffer.function == t_cdb_instrn_set::DIVRS)
+       {
+	if (flb_wait == 0)
+	 {
+          OutputInstrBuffer.function = t_cdb_instrn_set::DIV;
+          strcpy(OutputInstrBuffer.rr_field.snk_reg, InstrBuffer.rs_field.snk_reg);
+	  sprintf(OutputInstrBuffer.rr_field.src_reg, "FLB%d", flb_no);
+	  d_address = InstrBuffer.rs_field.mem_addr;
+	  if ((d_address >= 0) && (d_address < D_Mem_Size))
+	   {
+	    DataOutputBuffer[0].operand = data_mem[d_address].data;
+	    DataOutputBuffer[0].reg_no = flb_no;
+	    flb_in_use ++;
+	    flb_no++;
+	    if (flb_no == 7)
+	     {flb_no = 1;}
+	  }
+	else
+	 {
+	  DataOutputBuffer[0].operand = 0;
+	  data_address_error = true;
+	  stopSimulation(0);	// Invalid data memory address
+	 }
+	}	// end of flb_wait
+       }	// end of DIVRS
+
+     else
+      {
+       OutputInstrBuffer = InstrBuffer;
+      }
+
+// Except for STOP, increment instruction address if there are FL and SD
+// buffers free
+      if ((InstrBuffer.function != t_cdb_instrn_set::STOP) && (sdb_wait == 0) && (flb_wait == 0))
+       {
+	i_address ++;
+	send_instr = 1;
+       }
+// For a stop instruction, wait until the SD buffers are free before
+// stopping Source
+      if ((InstrBuffer.function == t_cdb_instrn_set::STOP)
+       && (sdb_in_use[1] == 0)
+       && (sdb_in_use[2] == 0)
+       && (sdb_in_use[3] == 0))
+	{
+	 stop_P0 = 1;
+	 send_instr = 1;
+	}
+     }	// end of valid instruction
+   }	// end of Stop_P0 
+
+
+	}	// end of P0_Held
+
+// end of ClockPhase 0
+
+$phase1
+
+    P1_Held = Hold_P1;
+    if ((send_instr == 1) && (P1_Held == 0))
+					// send instruction to FLOS
+     {
+      send_INSTRUCTION(to_flos, OutputInstrBuffer);
+      Hold_P1 = 1;
+      send_instr = 0;
+     }
+     flb_reg_no = DataOutputBuffer[d_accesstime - 1].reg_no;
+
+     if (flb_reg_no > 0)			// send data to FLB
+      {
+       sim_schedule(flb_reg[flb_reg_no-1], 0.0, OPERAND, 
+		SIM_PUT(t_operand_reg, DataOutputBuffer[d_accesstime-1]));
+      }
+	stop_P1 = stop_P0;
+// end of ClockPhase 1
+
+$report
+
+  if(data_address_error)
+   {printf("Simulation aborted: invalid data memory address\n");}
+
+  if(instr_address_error)
+   {printf("Simulation aborted: invalid instruction memory address\n");}
+
+  if(function_error)
+   {printf("Simulation aborted: unimplemented function\n");}
+
+  if(time_out)
+   {printf("Simulation aborted: Timed out\n");}

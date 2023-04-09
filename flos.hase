@@ -1,0 +1,119 @@
+// Project:	Tomasulo's Algorithm
+// Entity	Floating Point Operation Stack
+// File		flos.hase
+// Date:	2 April 2001, edited 3 Feb 2019
+
+// The Source Unit normally sends one instruction per clock (in
+// ClockPhase 1) to the Floating-point Operation Stack (FLOS). The FLOS
+// contains an eight-element queue with a pointer which initially points
+// to element 0. Provided that the queue is not full, then in ClockPhase
+// 0 any instruction received from the Source is written into the queue
+// element addressed by the pointer and the pointer is incremented. The
+// display is then updated.
+
+// In ClockPhase 1, provided that the Decoder has acknowleded the
+// previous instruction sent to it, the instruction in element 0 is read
+// out and, unless it is a VOID, is sent to the Decoder. The remaining
+// instructions in the queue are then moved down one position and if the
+// the pointer has a value greater than 0, it is decremented.
+
+// Feb 2019, STATES parameter added to display IDLE/BUSY states
+
+
+$class_includes
+class source;
+
+$class_decls
+
+//entity references
+  sim_entity_id src;
+
+  source * mySRC;
+
+//structures and variables
+  int Dec_P1_Held;
+  int Dec_Hold_P1;
+
+  t_cdb_instrn_set Instruction;
+  t_cdb_instrn_set flos_array[8];
+  int array_pointer;
+
+  void Clear_Hold();
+
+$class_defs
+
+void flos::Clear_Hold()	// invoked by Decoder
+{
+	Dec_Hold_P1 = 0;
+}
+
+
+$pre
+
+// identities
+  src   = sim.get_entity_id("SOURCE");
+  mySRC = (source*)sim.get_entity(src);
+
+// initialise variables
+
+  array_pointer = 0;
+
+  Dec_Hold_P1 = 0;
+  Dec_P1_Held = 0;
+
+  for (int i=0; i<8; i++)
+   flos_array[i].reset();
+ my_state = FLOS_IDLE;
+ dump_state();
+
+$phase0
+// predicates
+   sim_from_port ins_packet(from_source);
+
+// Deal with input instruction
+
+     if (array_pointer < 8)
+      {if (sim_waiting(ev, ins_packet) > 0)
+	{
+	 SIM_CAST(t_cdb_instrn_set, Instruction, ev);
+	 flos_array[array_pointer] = Instruction;
+	 mySRC->Clear_Hold();
+	 array_pointer ++;
+	}
+
+	FLOS1 = flos_array[0];
+	FLOS2 = flos_array[1];
+	FLOS3 = flos_array[2];
+	FLOS4 = flos_array[3];
+	FLOS5 = flos_array[4];
+	FLOS6 = flos_array[5];
+	FLOS7 = flos_array[6];
+	FLOS8 = flos_array[7];
+	if (flos_array[0].function == t_cdb_instrn_set::VOID)
+	 {my_state = FLOS_IDLE;}
+	else
+	  {my_state = FLOS_BUSY;}
+          dump_state_i();
+        }
+
+$phase1
+      Dec_P1_Held = Dec_Hold_P1;
+	if (Dec_P1_Held == 0)
+	 {
+	  if (flos_array[0].function != t_cdb_instrn_set::VOID)
+	   {
+	    send_INSTRUCTION(to_decoder, flos_array[0]);
+	    Dec_Hold_P1 = 1;
+	   }
+// Progress pipeline
+
+	flos_array[0] = flos_array[1];
+	flos_array[1] = flos_array[2];
+	flos_array[2] = flos_array[3];
+	flos_array[3] = flos_array[4];
+	flos_array[4] = flos_array[5];
+	flos_array[5] = flos_array[6];
+	flos_array[6] = flos_array[7];
+	if (array_pointer > 0)
+	{array_pointer --;}
+	 }

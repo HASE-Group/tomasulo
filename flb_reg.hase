@@ -1,0 +1,117 @@
+// Project:	Tomasulo's Algorithm
+// Entity	Floating-point Buffer Register
+// File		flb_reg.hase
+// Date:	19 June 2001
+
+$class_includes
+  class source;
+
+$class_decls
+
+//entity references
+  sim_entity_id src;
+
+  source * mySource;
+ 
+//structures and variables
+  
+  t_operand_reg Operand, Output;
+  int Register, FPR_no;
+  int full, output_ready, waiting;
+
+  int i;
+  int tag_no;
+
+// classes
+
+  void FLB_Output(int fpr_no);
+
+$class_defs
+
+  void flb_reg::FLB_Output(int fpr_no)
+{
+  // Invoked by the Decoder, which sends number of FPR to which value is
+  // to be sent.
+  // If full = 1, set output_ready = 1
+  // else set waiting = 1 so that output_ready will be set when data arrives
+
+  Output.reg_no = fpr_no;
+  if (full == 1)
+   {output_ready = 1;}
+  else			// full = 0
+   {waiting = 1;}
+
+}
+
+$pre
+
+  src = sim.get_entity_id("SOURCE");
+
+  mySource = (source*)sim.get_entity(src);
+
+  i = 0;
+  full = 0;
+  output_ready = 0;
+  waiting = 0;
+
+  FLB_Register = 0;
+  my_state = FLB_REG;
+  dump_state();
+
+$phase0
+// predicates
+  sim_from_p receive(src);
+
+     if (output_ready == 1)	//reset value and flags from previous cycle
+      {
+	 FLB_Register = 0;
+	 output_ready = 0;
+	 full = 0;
+	 waiting = 0;
+	 my_state = FLB_REG;
+	 dump_state();
+      }
+     if (sim_waiting(ev, receive) > 0)
+      {
+	SIM_CAST(t_operand_reg, Operand, ev);
+	tag_no = Operand.reg_no;
+	full = 1;
+	FLB_Register = Operand.operand;
+	my_state = FLB_REG_BUSY;
+	dump_state();
+	if (waiting == 1)
+	 {output_ready = 1;}
+      }
+
+$phase1
+     if (output_ready == 1)
+	// send Output to CDB using appropriate FLB tag icon
+	{
+	 Output.operand = Operand.operand;
+	 switch (tag_no)
+	  {
+	   case 1:
+	   send_FLB1(output, Output);
+	   break;
+	   case 2:
+	   send_FLB2(output, Output);
+	   break;
+	   case 3:
+	   send_FLB3(output, Output);
+	   break;
+	   case 4:
+	   send_FLB4(output, Output);
+	   break;
+	   case 5:
+	   send_FLB5(output, Output);
+	   break;
+	   case 6:
+	   send_FLB6(output, Output);
+	   break;
+	  }
+
+	 // notify source that value has been sent
+	 mySource->FLB_Freed();
+	}
+
+

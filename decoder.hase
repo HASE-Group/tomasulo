@@ -1,0 +1,645 @@
+// Project:	Tomasulo's Algorithm
+// Entity	Decoder
+// File		decoder.hase
+// Date:	2 July 2001
+
+// The Decoder receives instructions from the Floating-Point Operand Stack.
+// For arithmetic functions it first decides which arithmetic unit is
+// required and then selects a Reservation Station. It holds the Busy Flags
+// for the Stations and sets the Busy Bit of the selected station.
+// The Busy Bit is reset by the RS when its operands have been sent to the AU.
+// The Decoder then checks the state of the Tags for the Sink and Source 
+// operands. If the Tag = 0, a class is invoked in the relevant Register
+// telling it to send its operand to the CDB. The packet includes the RS
+// operand register number. 
+
+// A packet is sent to the CDB containing the function, the RS number and
+// flags telling the CDB to update the Sink Register Tag field.
+// If the Sink or Source Register Tag != 0, the CDB is told to send the
+// Tag to the RS.
+
+// Packet to CDB:
+// Function
+// Sink & Source Reg numbers (CDB checks Tag, and sends Tag to RS if !=0)
+// Sink & Source RS numbers (because RS is made up of individual registers)
+
+$class_includes
+class flos;
+class cdb;
+class fp_reg;
+class flb_reg;
+
+$class_decls
+
+//entity references
+  sim_entity_id bus;
+  sim_entity_id flost;
+  sim_entity_id fpr_tag[5];	//  0 is not used
+  sim_entity_id sdb_tag[4];	//  0 is not used
+
+  flos * myFLOS;
+  cdb * myCDB;
+  fp_reg * myFPR0;
+  fp_reg * myFPR1;
+  fp_reg * myFPR2;
+  fp_reg * myFPR3;
+  flb_reg * myFLB1;
+  flb_reg * myFLB2;
+  flb_reg * myFLB3;
+  flb_reg * myFLB4;
+  flb_reg * myFLB5;
+  flb_reg * myFLB6;
+  
+//structures and variables
+
+  int add_res1_busy;
+  int add_res2_busy;
+  int add_res3_busy;
+  int mul_res1_busy;
+  int mul_res2_busy;
+  char Sink[8], Source[8];
+
+  int tag_regs[17];	// array of tag registers defined in tomasulo.edl
+				// - numbers correspond to tag_reg numbers
+
+			// tag_reg[0]  = Floating-Point Register 0
+			// tag_reg[1]  = Floating-Point Register 1
+			// tag_reg[2]  = Floating-Point Register 2
+			// tag_reg[3]  = Floating-Point Register 3
+			// tag_reg[4]  = add reservation station 1 sink
+			// tag_reg[5]  = add reservation station 1 source
+			// tag_reg[6]  = add reservation station 2 sink
+			// tag_reg[7]  = add reservation station 2 source
+			// tag_reg[8]  = add reservation station 3 sink
+			// tag_reg[9]  = add reservation station 3 source
+			// tag_reg[10] = mul reservation station 1 sink
+			// tag_reg[11] = mul reservation station 1 source
+			// tag_reg[12] = mul reservation station 2 sink
+			// tag_reg[13] = mul reservation station 2 source
+			// tag_reg[14] = store data buffer 1
+			// tag_reg[15] = store data buffer 2
+			// tag_reg[16] = store data buffer 3
+
+  t_decoder_pkt Output_Reg;		// Fields are:
+					// snk_tag (sink register tag number)
+					// src_tag (source register tag number)
+					// snk_dest (RS sink register number)
+					// src_dest (RS source register number)
+					// status
+					// instrn (instruction)
+  t_reg_args snk_args, src_args;	// structures for holding
+					//decoded register arguments
+  int snk, src;				// sink, source register number
+  char snkT, srcT;			// sink, source register types
+  char char_buff[20], print_buff[20];
+  int CDB_P0_Held;
+  int CDB_P1_Held;
+  int CDB_Hold_P1;
+  int Flb_Tag_P0_Hold, Flb_Tag_P1_Hold, flb_tag_i;
+  int Add_Tag_P0_Hold, Add_Tag_P1_Hold, add_tag_i;
+  int Mul_Tag_P0_Hold, Mul_Tag_P1_Hold, mul_tag_i;
+
+  t_cdb_instrn_set Instruction, Decoder_Reg;
+  t_operand_req Src_Request, Snk_Request;
+  int Field;		// = 0 for Sink, = 1 for Source
+  int RS_tag_no;
+  int RS_Hold;
+  int stop;
+  int stop_Hold;
+  int stopped;
+  int outstanding_op;
+  int i;
+  int Snk_Req_Flag;
+  int Src_Req_Flag;
+  int old_state;
+
+// classes
+
+  void ClearResBusy(int);
+  int Read_tag_regs(int);
+  void Reset_tag(int);
+  void Clear_CDB_Hold();
+  void Add_Tag(int);
+  void Mul_Tag(int);
+
+$class_defs
+
+void decoder::ClearResBusy(int RS)
+{
+	// Invoked by the CDB when it has updated the sink register(s)
+  switch (RS)
+	{
+	 case 7:
+	  add_res1_busy = 0;
+	  break;
+	 case 8:
+	  add_res2_busy = 0;
+	  break;
+	 case 9:
+	  add_res3_busy = 0;
+	  break;
+	 case 10:
+	  mul_res1_busy = 0;
+	  break;
+	 case 11:
+	  mul_res2_busy = 0;
+	  break;
+	}
+}
+
+void decoder::Clear_CDB_Hold()	// invoked by CDB
+{
+	CDB_Hold_P1 = 0;
+}
+
+  int decoder::Read_tag_regs(int i)
+{
+	return tag_regs[i];
+}
+
+  void decoder::Reset_tag(int i)	// invoked by CDB
+{
+	   tag_regs[i] = 0;
+}
+
+  void decoder::Add_Tag(int add_tag)
+{
+ // ADD unit sends Decoder early warning of a new result; if the tag
+ // matches a tag in the Decoder's tag array, Hold until it's been cleared
+
+	for (i=0; i<17; i++)
+	{
+	 if (tag_regs[i] == add_tag)
+	  {Add_Tag_P1_Hold = 1;
+	   add_tag_i = i;}
+	}
+}
+
+  void decoder::Mul_Tag(int mul_tag)
+{
+ // MUL unit sends Decoder early warning of a new result; if the tag
+ // matches a tag in the Decoder's tag array, Hold until it's been cleared
+
+	for (i=0; i<17; i++)
+	{
+	 if (tag_regs[i] == mul_tag)
+	  {Mul_Tag_P1_Hold = 1;
+	   mul_tag_i = i;}
+	}
+}
+
+$pre
+
+// identities
+  flost     = sim.get_entity_id("FLOS");
+  bus       = sim.get_entity_id("CDB");
+  fpr_tag[0] = sim.get_entity_id("FL_PT_REG0_TAG");
+  fpr_tag[1] = sim.get_entity_id("FL_PT_REG1_TAG");
+  fpr_tag[2] = sim.get_entity_id("FL_PT_REG2_TAG");
+  fpr_tag[3] = sim.get_entity_id("FL_PT_REG3_TAG");
+
+  sdb_tag[1] = sim.get_entity_id("SDB_REG1_TAG");
+  sdb_tag[2] = sim.get_entity_id("SDB_REG2_TAG");
+  sdb_tag[3] = sim.get_entity_id("SDB_REG3_TAG");
+
+  myFLOS = (flos*)sim.get_entity(flost);
+  myCDB  = (cdb*)sim.get_entity(bus);
+  myFPR0 = (fp_reg*)sim.get_entity(sim.get_entity_id("FL_PT_REG0_OPR"));
+  myFPR1 = (fp_reg*)sim.get_entity(sim.get_entity_id("FL_PT_REG1_OPR"));
+  myFPR2 = (fp_reg*)sim.get_entity(sim.get_entity_id("FL_PT_REG2_OPR"));
+  myFPR3 = (fp_reg*)sim.get_entity(sim.get_entity_id("FL_PT_REG3_OPR"));
+
+  myFLB1 = (flb_reg*)sim.get_entity(sim.get_entity_id("FL_PT_BUF1"));
+  myFLB2 = (flb_reg*)sim.get_entity(sim.get_entity_id("FL_PT_BUF2"));
+  myFLB3 = (flb_reg*)sim.get_entity(sim.get_entity_id("FL_PT_BUF3"));
+  myFLB4 = (flb_reg*)sim.get_entity(sim.get_entity_id("FL_PT_BUF4"));
+  myFLB5 = (flb_reg*)sim.get_entity(sim.get_entity_id("FL_PT_BUF5"));
+  myFLB6 = (flb_reg*)sim.get_entity(sim.get_entity_id("FL_PT_BUF6"));
+
+// initialise variables
+
+  RS_Hold = 0;
+  stop = 0;
+  stop_Hold = 0;
+  stopped = 0;
+  Snk_Req_Flag = 0;
+  Src_Req_Flag = 0;
+
+  add_res1_busy = 0;
+  add_res2_busy = 0;
+  add_res3_busy = 0;
+  mul_res1_busy = 0;
+  mul_res2_busy = 0;
+  CDB_P0_Held = 0;
+  CDB_P1_Held = 0;
+  CDB_Hold_P1 = 0;
+  Add_Tag_P0_Hold = 0;
+  Add_Tag_P1_Hold = 0;
+  add_tag_i = 0;
+  Mul_Tag_P0_Hold = 0;
+  Mul_Tag_P1_Hold = 0;
+  mul_tag_i = 0;
+
+  my_state = DECODER_IDLE;
+  FUNC.reset();
+  old_state = DECODER_IDLE;
+  dump_state();
+
+// initialise tag register array contents to zero
+
+   for (i=0; i<17; i++)
+    {tag_regs[i] = 0;}
+
+$phase0
+// predicates
+   sim_from_port ins_packet(from_flos);
+
+    CDB_P0_Held = CDB_P1_Held;
+     if ((CDB_P0_Held == 0) && (RS_Hold == 0)
+      && (Add_Tag_P0_Hold == 0) && (Mul_Tag_P0_Hold == 0)
+      && (stop_Hold == 0))				// No Holds set
+     {
+      if (sim_waiting(ev, ins_packet) > 0)
+       {
+	SIM_CAST(t_cdb_instrn_set, Instruction, ev);
+	Decoder_Reg = Instruction;
+	Output_Reg.instrn = Instruction;
+	if (Instruction.function == t_cdb_instrn_set::VOID)
+	 {Output_Reg.status = 0;}
+	else
+	 {Output_Reg.status = 1;}
+	myFLOS->Clear_Hold();
+	}
+     }	// end of Holds
+
+
+   if ((CDB_P0_Held == 0) && (stopped == 0)
+      && (Add_Tag_P0_Hold == 0) && (Mul_Tag_P0_Hold == 0))
+
+// No Holds set except perhaps RS_Hold or stop_Hold,
+// which are rechecked each cycle
+
+    {
+        if (Output_Reg.status == 1)	// may be a new instruction or
+					// one held from previous cycle
+	 {
+	  if ((RS_Hold == 0) && (stop_Hold == 0))	// change state
+							// if not held
+	   {
+	    my_state = DECODER_BUSY;
+	    FUNC = Output_Reg.instrn;
+//	    dump_state();
+	   }
+	sim_hold(5);	//wait for any updates of tag array by CDB
+
+	  if (Decoder_Reg.function == t_cdb_instrn_set::LD)
+	   {
+// determine FLB number, invoke class in this FLB telling it to send its
+// operand to the CDB and schedule a packet to the relevant FLR tag register.
+
+	    strcpy(Sink, Decoder_Reg.rr_field.snk_reg);
+	    snk_args = Decode_Register(Sink);
+	    snk = snk_args.number;		// Sink register number
+	    strcpy(Source, Decoder_Reg.rr_field.src_reg);
+	    src_args = Decode_Register(Source);
+	    src = src_args.number;		// Source register number
+	    switch (src)
+	     {				// tell FLB to send operand
+	      case 1:			// and what its tag number is
+	      myFLB1->FLB_Output(1);
+	      break;
+	      case 2:
+	      myFLB2->FLB_Output(2);
+	      break;
+	      case 3:
+	      myFLB3->FLB_Output(3);
+	      break;
+	      case 4:
+	      myFLB4->FLB_Output(4);
+	      break;
+	      case 5:
+	      myFLB5->FLB_Output(5);
+	      break;
+	      case 6:
+	      myFLB6->FLB_Output(6);
+	      break;
+	     }
+// update FPR tag display register
+//>>>I VALUE l_opr_link.
+	    sim_schedule (fpr_tag[snk], 0.0, VALUE, SIM_PUT(int, src));
+
+// update Tag Register contents
+	   tag_regs[snk] = src;
+	   }		// end of LD
+
+	  else if (Decoder_Reg.function == t_cdb_instrn_set::ST)
+	   {
+// determine FPR number, invoke class in this FPR telling it to send its
+// operand to the CDB and schedule a packet to the relevant SDB tag register.
+// Sink and Source roles are reversed for ST, i.e.
+// Source is FPR, determined by snk_reg field
+// Sink is SDB,  determined by src_reg field
+
+	    strcpy(Sink, Decoder_Reg.rr_field.src_reg);
+	    snk_args = Decode_Register(Sink);
+	    snk = snk_args.number;		// Sink SDB register number
+	    strcpy(Source, Decoder_Reg.rr_field.snk_reg);
+	    src_args = Decode_Register(Source);
+	    src = src_args.number;		// Source FP register number
+	    Output_Reg.snk_dest = snk;
+	    Output_Reg.src_dest = 0;		// There's no Source dest
+	    Output_Reg.snk_tag = 0;		// There's no Sink tag
+	    Output_Reg.src_tag = tag_regs[src];
+
+	   // Test tag field. If == 0, set Src_Req_Flag. In ClockPhase 1
+	   // a request will be sent to the relvant FPR
+
+	   if (tag_regs[src] == 0)
+	    {
+	     Src_Req_Flag = 1;
+	    }
+	   else		// update Tag Register contents
+	    {
+	     snk += 13;		// SDB regs are 14/15/16
+	     tag_regs[snk] = tag_regs[src];
+	    }
+	   }		// end of ST
+
+	  else if (Decoder_Reg.function == t_cdb_instrn_set::STOP)
+	   {
+// check if all tags are 0, i.e. there are no outstanding operations
+// still to complete
+	    outstanding_op = 0;
+	    for (i=0; i<17; i++)
+	     {if (tag_regs[i] != 0)
+	      {outstanding_op = 1;
+	      }
+	     }
+	    if (outstanding_op == 1)
+	     {
+	      stop_Hold = 1;
+	      my_state = DECODER_HELD;
+	     }
+	     else
+	      {
+	       stop = 1;
+	       stop_Hold = 0;
+	       my_state = DECODER_BUSY;
+	      }
+	    }		// end of STOP
+
+	  else if ((Decoder_Reg.function == t_cdb_instrn_set::ADD)
+	        || (Decoder_Reg.function == t_cdb_instrn_set::SUB))
+	   {
+// Select Reservation Station, copy RS register numbers to Output Register
+// and set selected RS busy
+
+	    if (add_res1_busy == 0)
+		{
+		 Output_Reg.snk_dest = 4;	// numbers match
+		 Output_Reg.src_dest = 5;	// Tag Register numbers 
+		 add_res1_busy = 1;
+		 RS_Hold = 0;
+		}
+	    else if (add_res2_busy == 0)
+		{
+		 Output_Reg.snk_dest = 6;	// numbers match
+		 Output_Reg.src_dest = 7;	// Tag Register numbers 
+		 add_res2_busy = 1;
+		 RS_Hold = 0;
+		}
+	    else if (add_res3_busy == 0)
+		{
+		 Output_Reg.snk_dest = 8;	// numbers match
+		 Output_Reg.src_dest = 9;	// Tag Register numbers 
+		 add_res3_busy = 1;
+		 RS_Hold = 0;
+		}
+	    else
+		{RS_Hold = 1;}
+	   }	// end of if function = ADD etc
+
+	  else if ((Decoder_Reg.function == t_cdb_instrn_set::MUL)
+	        || (Decoder_Reg.function == t_cdb_instrn_set::DIV))
+	   {
+// Select Reservation Station, copy RS register numbers to Output Register
+// and set selected RS busy
+
+	   if (mul_res1_busy == 0)
+		{
+		 Output_Reg.snk_dest = 10;	// numbers match
+		 Output_Reg.src_dest = 11;	// Tag Register numbers 
+		 mul_res1_busy = 1;
+		 RS_Hold = 0;
+		}
+	   else if (mul_res2_busy == 0)
+		{
+		 Output_Reg.snk_dest = 12;	// numbers match
+		 Output_Reg.src_dest = 13;	// Tag Register numbers 
+		 mul_res2_busy = 1;
+		 RS_Hold = 0;
+		}
+	   else
+		{RS_Hold = 1;}
+	   }	// end of if function = MUL etc
+
+	  if (Decode_AU_Op(Decoder_Reg) == 1)
+	   {
+	    if (RS_Hold == 0)
+	    {
+// Create Reservation Station tag (used to update Tag register contents) 
+
+	// Add Reservation Station 1 tag = 7
+	// Add Reservation Station 2 tag = 8
+	// Add Reservation Station 3 tag = 9
+	// Mul Reservation Station 1 tag = 10
+	// Mul Reservation Station 2 tag = 11
+
+	RS_tag_no = Output_Reg.snk_dest/2 + 5;
+
+// Decode Sink and Source register type and number
+
+	 strcpy(Sink, Decoder_Reg.rr_field.snk_reg);
+	 snk_args = Decode_Register(Sink);
+	 snkT = snk_args.type;		// Sink register type
+	 snk = snk_args.number;		// Sink register number
+	 Output_Reg.snk_tag = tag_regs[snk];
+
+	 strcpy(Source, Decoder_Reg.rr_field.src_reg);
+	 src_args = Decode_Register(Source);
+	 srcT = src_args.type;		// Source register type
+	 src = src_args.number;		// Source register number
+
+// Deal with Source operand (before Sink because Sink code updates tag)
+
+	 if (srcT == 'F')
+	  {
+	   Output_Reg.src_tag = tag_regs[src];
+	   // Test tag field. If == 0, set Src_Req_Flag. In ClockPhase 1
+	   // a request will be sent to the relvant FPR
+
+	   Src_Request.tag_no = Output_Reg.src_tag;
+	   Src_Request.reg_no = Output_Reg.src_dest;
+	   Src_Req_Flag = 1;
+
+// update Tag Register contents i.e. of RS source register 
+
+	tag_regs[Output_Reg.src_dest] = tag_regs[src];
+	  }	// end of src = F
+
+	 if (srcT == 'B')
+	  {
+	   Output_Reg.src_tag = src;	// = FLB number
+	    switch (src)
+	     {				// tell FLB to send operand
+	      case 1:			// and what its tag number is
+	      myFLB1->FLB_Output(1);
+	      break;
+	      case 2:
+	      myFLB2->FLB_Output(2);
+	      break;
+	      case 3:
+	      myFLB3->FLB_Output(3);
+	      break;
+	      case 4:
+	      myFLB4->FLB_Output(4);
+	      break;
+	      case 5:
+	      myFLB5->FLB_Output(5);
+	      break;
+	      case 6:
+	      myFLB6->FLB_Output(6);
+	      break;
+	     }
+// update Tag Register contents
+
+	tag_regs[Output_Reg.src_dest] = src;
+	  }	// end of src = B
+
+// Deal with Sink operand
+
+	if (snkT == 'F')
+	 {
+	   // Test tag field. If == 0, set Snk_Req_Flag. In ClockPhase 1
+	   // a request will be sent to the relvant FPR
+	   Snk_Request.tag_no = Output_Reg.snk_tag;
+	   Snk_Request.reg_no = Output_Reg.snk_dest;
+	   Snk_Req_Flag = 1;
+
+// update Tag Register contents
+
+	   tag_regs[Output_Reg.snk_dest] = tag_regs[snk];
+	   tag_regs[snk] = RS_tag_no;
+
+// update tag display
+//>>>I VALUE l_opr_link.
+	   sim_schedule(fpr_tag[snk], 0.0, VALUE, SIM_PUT(int, RS_tag_no));
+	 }	// end of snk = F
+
+	   }	// end of RS_Hold = 0
+	  else 		// RS_Hold = 1
+	   {
+	    my_state = DECODER_HELD;
+	   }
+	  }	// end of ADD, etc
+
+	   if (Src_Req_Flag == 1)
+	    {
+		// Tell relevant fp register to send register value to CDB
+		// and thence to reservation station. If tag field != 0,
+		// CDB will send tag to reservation station or SDB
+	     switch(src)
+	       {
+		case 0:
+		myFPR0->Output_src(Src_Request);
+		break;
+		case 1:
+		myFPR1->Output_src(Src_Request);
+		break;
+		case 2:
+		myFPR2->Output_src(Src_Request);
+		break;
+		case 3:
+		myFPR3->Output_src(Src_Request);
+		break;
+		}
+	     Src_Req_Flag = 0;
+	    }
+
+	   if (Snk_Req_Flag == 1)
+	    {
+		// Tell relevant fp register to send register value to CDB
+		// and thence to reservation station. If tag field != 0,
+		// CDB will send tag to reservation station or SDB
+	     switch(snk)
+	       {
+		case 0:
+		myFPR0->Output_snk(Snk_Request);
+		break;
+		case 1:
+		myFPR1->Output_snk(Snk_Request);
+		break;
+		case 2:
+		myFPR2->Output_snk(Snk_Request);
+		break;
+		case 3:
+		myFPR3->Output_snk(Snk_Request);
+		break;
+		}
+	     Snk_Req_Flag = 0;
+	    }
+
+	  }	// end of status = 1
+	 else
+	  {
+	   my_state = DECODER_IDLE;
+	   FUNC.reset();
+	  }
+	}		// end of CDB_P0_Held etc
+   else	if (stopped == 0)	// CDB_P0_Held = 1 and not stopped
+    {my_state = DECODER_HELD;}
+
+//Update state display
+	  dump_state();
+
+
+$phase1
+	CDB_P1_Held = CDB_Hold_P1;
+// if STOP function was decoded and no operations are outstanding,
+// stop the clock
+	if (stop == 1)
+	    {
+	     stopSimulation(0);
+	     my_state = DECODER_IDLE;
+	     dump_state();
+	     stopped = 1;
+	    }
+
+// if there are no holds set and instruction is valid, process instruction
+      if  ((CDB_P1_Held == 0)
+	&& (Add_Tag_P0_Hold == 0)
+	&& (Mul_Tag_P0_Hold == 0)
+	&& (RS_Hold  == 0)
+	&& (Output_Reg.status == 1))
+
+// if the instruction is an ST or AU Op, send to CDB
+	{
+	 if ((Decode_AU_Op(Output_Reg.instrn) == 1)
+	  || (Output_Reg.instrn.function == t_cdb_instrn_set::ST))
+	  {
+	   send_DECODER_PKT(to_cdb, Output_Reg);
+
+
+	   Output_Reg.status = 0;
+	   CDB_Hold_P1 = 1;
+	   FUNC = Output_Reg.instrn;
+	  }			// end of ST or AU
+	 }			// end of no holds set
+
+// end of ClockPhase 1
+
+
+
+
+
+

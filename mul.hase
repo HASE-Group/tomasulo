@@ -1,0 +1,246 @@
+
+// Project:	Tomasulo's Algorithm
+// Entity	Multiply Unit
+// File		mul.hase
+// Date:	28 May 2001
+
+
+// The Multiply Unit executes instructions MUL and DIV.
+
+// It receives instruction and operand packets from the RS
+// registers and sends an operand result packet to the Common Data Bus.
+// The number of clock periods (latency values) required to execute MUL
+// and DIV are parameters of the model
+
+// The Unit is implemented as a 16-stage pipeline, although it cannot accept
+// another instruction until it has sent the result of an existing
+// instruction to the CDB. It computes its result in the first stage
+// and simply copies it through the remaining stages. The result is 
+// taken from the stage corresponding to function's latency and sent
+// to the CDB.
+
+// At the start of a DIV, it checks for divide by zero and sets an error
+// condition if found.
+
+
+$class_includes
+  class decoder;
+  class mul_res;
+
+$class_decls
+
+//entity references
+  decoder * myDecoder;
+  mul_res * myMul_Res;
+
+//structures and variables
+  t_rs_control Instruction;
+  t_au_struct InputPacket, Pipeline[16];
+  t_au_output Output;
+  t_au_result result;
+
+  bool div_error;
+  int Snk_Operand, Src_Operand;
+  int CDB_P1_Held;
+  int CDB_Hold_P1;
+  int old_state;
+
+  int latency;			// max pipeline length
+  int input_instrn;
+  int Any;		// Unit is active if Any pipeline stage is valid
+
+
+//classes
+  t_au_result Result();
+  void Clear_CDB_Hold();
+
+$class_defs
+
+t_au_result mul::Result()
+// computes result of instruction/operands in first pipeline stage
+{
+	  if (Instruction.instrn.function == t_cdb_instrn_set::MUL)
+		{
+		result.status = 0;
+		result.data = Src_Operand * Snk_Operand;
+		}
+
+	  else if (Instruction.instrn.function == t_cdb_instrn_set::DIV)
+		{
+		 if (Src_Operand == 0)
+		  {
+		   div_error = true;
+ 	 	   stopSimulation(0);//  divide by zero
+		  }
+		  else
+		  {
+		   result.status = 0;
+		   result.data = Snk_Operand / Src_Operand;
+		  }
+		}
+	return result;
+}
+
+void mul::Clear_CDB_Hold()
+{
+	CDB_Hold_P1 = 0;
+}
+
+$pre
+
+  latency = 16;	// max pipeline length
+
+  myDecoder = (decoder*)sim.get_entity(sim.get_entity_id("DECODER"));
+  myMul_Res = (mul_res*)sim.get_entity(sim.get_entity_id("MUL_RES"));
+
+  div_error = false;
+  input_instrn = 0;
+  Any = 0;		// Unit is active if Any pipeline stage is valid
+
+  CDB_P1_Held = 0;
+  CDB_Hold_P1 = 0;
+  my_state = MUL_VOID;
+  old_state = MUL_VOID;
+  dump_state();
+
+// initialise pipeline 
+	for (int j=0; j < 8; j++)
+	{
+	Pipeline[j].status = 0;
+	Pipeline[j].instrn.reset();
+	}
+
+$phase0
+
+     if (CDB_P1_Held == 1)
+    {
+	  if (my_state == MUL_BUSY)
+	  {my_state = MUL_HELD;} // i.e. pipeline busy but stalled
+	  if (my_state != old_state)
+	  {dump_state();
+	   old_state = my_state;}
+    }
+
+   else	// Hold = 0
+
+   {
+	input_instrn = 0;
+
+  if (sim_waiting(SIM_ANY) > 0)
+  {
+	// if there's one packet, there will be three, not in guaranteed order
+   for (int j=0; j<3; j++)
+    {
+     sim_get_next(ev);
+     if ((ev.from_port(from_mul_res1_rsc))
+      || (ev.from_port(from_mul_res2_rsc)))	// Instruction packet
+	{
+	 SIM_CAST (t_rs_control, Instruction, ev);
+	}
+     else if ((ev.from_port(from_mul_res1_snk))
+           || (ev.from_port(from_mul_res2_snk)))
+	{
+	 SIM_CAST (int, Snk_Operand, ev);	// Sink operand packet
+	}
+     else 				// Must be Source operand packet
+	{
+	 SIM_CAST (int, Src_Operand, ev);
+	}
+    }	// closes for loop
+	input_instrn = 1;
+
+  }	//closes sim_waiting(SIM_ANY)
+
+// PROGRESS PIPELINE
+
+// move instruction/operand packets through pipeline registers
+// NB in hardware the Pipeline registers would be copied simultaneously
+// In the simulation they are dealt with serially, so need to start
+// at the output end
+
+	Any = 0;
+	for (int i= (latency-1); i>=1; i--)
+	 {
+	 Pipeline[i].status = Pipeline[i-1].status;
+		if ((Pipeline[i].status & 1) == 1)
+		{Any = 1;}
+	 Pipeline[i].instrn = Pipeline[i-1].instrn;
+	 Pipeline[i].data1 = Pipeline[i-1].data1;
+	 Pipeline[i].data2 = Pipeline[i-1].data2;
+	 }
+
+// DEAL WITH INPUT
+// If Stage 0 contains a valid instruction, compute Result and
+// copy into first Pipeline stage output register (Pipeline[0])
+	if (input_instrn == 1)
+	  {Any = 1;
+	   Pipeline[0].status =  1 | (Instruction.tag_no << 16) | Result().status;
+	   Pipeline[0].instrn = Instruction.instrn;
+	   Pipeline[0].data1  = Result().data;
+	   Pipeline[0].data2  = Src_Operand;
+	  }
+         else
+	  {Pipeline[0].data1 = 0;
+	   Pipeline[0].status = 0;}
+
+// set void/active state in display
+	if (Any == 1)
+	  {my_state = MUL_BUSY;} // i.e. valid instruction received
+	else
+	  {my_state = MUL_VOID;} // i.e. non-valid instruction received
+
+//	}	// closes latency  > 0
+   }		// closes Hold = 0
+
+//update state display
+
+	 if (my_state != old_state)
+	  {dump_state();
+	   old_state = my_state;}
+
+
+$phase1
+
+	CDB_P1_Held = CDB_Hold_P1;
+	// If not held up, send output to CDB
+
+    if (CDB_P1_Held == 0)
+     {
+
+// Send result in pipeline stage corresponding to function latency to CDB
+// and send Tag as an early warning to the Decoder
+// (in case it's about to access the Tagged value)
+        int ind = -1;
+	if ( (Pipeline[mul_latency-1].instrn.function == t_cdb_instrn_set::MUL)
+	 && ((Pipeline[mul_latency-1].status & 1) == 1) )
+	  ind = mul_latency-1;
+	else if ((Pipeline[div_latency-1].instrn.function == t_cdb_instrn_set::DIV)
+	 && ((Pipeline[div_latency-1].status & 1) == 1) )
+	  ind = div_latency-1;
+
+	if (ind != -1)
+	 {
+	  Output.operand = Pipeline[ind].data1;
+	  Output.tag_no = Pipeline[ind].status >> 16;
+	  Pipeline[ind].status = 0;
+	  switch (Output.tag_no)
+	   {
+	    case 10:
+	    send_AU4_OUTPUT( to_cdb, Output, 0, 17, 2 );
+	    break;
+	    case 11:
+	    send_AU5_OUTPUT( to_cdb, Output, 0, 17, 2 );
+	    break;
+	   }
+
+	   myDecoder->Mul_Tag(Output.tag_no);	// advance warning of new tag
+	   CDB_Hold_P1 = 1;  // CDB resets Hold when it has dealt with packet
+	   myMul_Res->SetReady();
+	   my_state = MUL_VOID;
+	  }	// ends if ind != -1
+	}	// ends if (CDB_P1_Held == 0)
+
+$report
+
+  if(div_error)
+   {printf("Simulation aborted: Attempted divide by zero\n");}
