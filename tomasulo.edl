@@ -23,6 +23,8 @@ PARAMLIB (
 		
 -- definition of error and parameter description word array
 	ARRAY (string_array, String);
+    
+    STRUCT (t_reg_args, [RCHAR (type, 'R'), RINT (number, 0)]);
 
 -- definition of instruction structures
 	STRUCT (t_reg_reg, [RSTRING (snk_reg, "-"),
